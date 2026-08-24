@@ -41,7 +41,8 @@ export default {
     },
     async mounted() {
         const savedUser = localStorage.getItem('busUser');
-        if (savedUser) {
+        const savedJwt = localStorage.getItem('carrierJwt');
+        if (savedUser && savedJwt) {
             try {
                 this.user = JSON.parse(savedUser);
                 this.isAuthenticated = true;
@@ -49,6 +50,7 @@ export default {
             } catch (e) {
                 console.error('Error restoring session', e);
                 localStorage.removeItem('busUser');
+                localStorage.removeItem('carrierJwt');
             }
         }
     },
@@ -166,6 +168,9 @@ export default {
                 this.user = res.data.user;
                 this.isAuthenticated = true;
                 localStorage.setItem('busUser', JSON.stringify(this.user));
+                if (res.data.token) {
+                    localStorage.setItem('carrierJwt', res.data.token);
+                }
                 await this.fetchData();
             } catch (e) {
                 alert(e.response?.data?.error || 'Ошибка входа');
@@ -191,7 +196,7 @@ export default {
         async fetchStats() {
             this.loading = true;
             try {
-                const res = await api.get(`/bus-admin/stats?operator_id=${this.user.id}`);
+                const res = await api.get('/bus-admin/stats');
                 this.stats = res.data;
             } catch (e) { console.error('Error fetching stats', e); } finally { this.loading = false; }
         },
@@ -205,22 +210,8 @@ export default {
         async fetchTickets() {
             this.loading = true;
             try {
-                if (localStorage.getItem('FEATURE_V2_API') === 'true') {
-                    // Staging pilot flow
-                    const token = localStorage.getItem('v2Token');
-                    const orgId = localStorage.getItem('v2OrgId');
-                    const res = await api.get('/v2/carrier/trips', {
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'x-carrier-org-id': orgId
-                        }
-                    });
-                    this.tickets = res.data;
-                } else {
-                    // Legacy flow
-                    const res = await api.get(`/bus-admin/tickets?operator_id=${this.user.id}`);
-                    this.tickets = res.data;
-                }
+                const res = await api.get('/bus-admin/tickets');
+                this.tickets = res.data;
             } catch (e) { console.error(e); } finally { this.loading = false; }
         },
         async fetchBookings() {
@@ -230,7 +221,7 @@ export default {
                 if (this.tickets.length === 0) {
                     await this.fetchTickets();
                 }
-                const res = await api.get(`/bus-admin/bookings?operator_id=${this.user.id}`);
+                const res = await api.get('/bus-admin/bookings');
                 this.bookings = res.data;
             } catch (e) { console.error(e); } finally { this.loading = false; }
         },
@@ -242,6 +233,7 @@ export default {
             this.tickets = [];
             this.bookings = [];
             localStorage.removeItem('busUser');
+            localStorage.removeItem('carrierJwt');
         },
         // Bus Creation logic borrowed from AdminView.vue
         addStop() {
