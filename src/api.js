@@ -12,10 +12,17 @@ const api = axios.create({
 api.interceptors.request.use(config => {
     // Ensure security header is ALWAYS present
     config.headers['x-mana-man'] = 'nasa.2006';
-    
-    const adminToken = localStorage.getItem('adminToken');
-    if (adminToken) {
-        config.headers['X-Admin-Token'] = adminToken;
+
+    const url = config.url || '';
+    const isAdminApi =
+        url === '/admin' ||
+        url.startsWith('/admin/');
+
+    if (isAdminApi) {
+        const adminToken = localStorage.getItem('adminToken');
+        if (adminToken) {
+            config.headers['X-Admin-Token'] = adminToken;
+        }
     }
 
     try {
@@ -23,7 +30,7 @@ api.interceptors.request.use(config => {
         if (carrierJwt) {
             config.headers['Authorization'] = `Bearer ${carrierJwt}`;
         }
-    } catch (e) {}
+    } catch (e) { }
 
     return config;
 }, error => {
