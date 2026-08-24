@@ -47,11 +47,13 @@ export default {
             try {
                 this.user = JSON.parse(savedUser);
                 this.isAuthenticated = true;
-                await this.fetchData();
+                this.fetchCities();
+                await Promise.all([this.fetchStats(), this.fetchTickets()]);
             } catch (e) {
                 console.error('Error restoring session', e);
                 localStorage.removeItem('busUser');
                 localStorage.removeItem('carrierJwt');
+                this.isAuthenticated = false;
             }
         }
     },
@@ -121,6 +123,13 @@ export default {
             isEditingBooking: false,
             editingBookingId: null,
             showEditModal: false,
+            showShareModal: false,
+            selectedShareTicket: null,
+            shareToast: false,
+            shareToastMessage: '',
+            ticketsState: 'idle', // 'idle' | 'loading' | 'success' | 'empty' | 'auth_error' | 'forbidden_error' | 'network_error'
+            ticketsErrorMessage: '',
+            authErrorMessage: '',
             chartOptions: {
                 responsive: true,
                 maintainAspectRatio: false,
@@ -164,6 +173,7 @@ export default {
                 return;
             }
             this.loading = true;
+            this.authErrorMessage = '';
             try {
                 const res = await api.post('/auth/bus-login', { phone: this.phone, password: this.password });
                 this.user = res.data.user;
@@ -172,9 +182,11 @@ export default {
                 if (res.data.token) {
                     localStorage.setItem('carrierJwt', res.data.token);
                 }
-                await this.fetchData();
+                this.fetchCities();
+                await Promise.all([this.fetchStats(), this.fetchTickets()]);
             } catch (e) {
-                alert(e.response?.data?.error || 'Ошибка входа');
+                this.authErrorMessage = e.response?.data?.error || 'Ошибка входа';
+                alert(this.authErrorMessage);
             } finally {
                 this.loading = false;
             }
@@ -210,10 +222,36 @@ export default {
         },
         async fetchTickets() {
             this.loading = true;
+            this.ticketsState = 'loading';
+            this.ticketsErrorMessage = '';
             try {
                 const res = await api.get('/bus-admin/tickets');
-                this.tickets = res.data;
-            } catch (e) { console.error(e); } finally { this.loading = false; }
+                this.tickets = res.data || [];
+                if (this.tickets.length === 0) {
+                    this.ticketsState = 'empty';
+                } else {
+                    this.ticketsState = 'success';
+                }
+            } catch (e) {
+                console.error('[BusAdmin] Error fetching tickets:', e);
+                const status = e.response?.status;
+                if (status === 401) {
+                    this.ticketsState = 'auth_error';
+                    this.tickets = [];
+                    this.isAuthenticated = false;
+                    this.authErrorMessage = 'Сессия истекла. Пожалуйста, войдите заново.';
+                    localStorage.removeItem('carrierJwt');
+                    localStorage.removeItem('busUser');
+                } else if (status === 403) {
+                    this.ticketsState = 'forbidden_error';
+                    this.ticketsErrorMessage = 'У вас нет доступа к этому разделу.';
+                } else {
+                    this.ticketsState = 'network_error';
+                    this.ticketsErrorMessage = 'Не удалось загрузить рейсы. Попробуйте ещё раз.';
+                }
+            } finally {
+                this.loading = false;
+            }
         },
         async fetchBookings() {
             this.loading = true;
@@ -233,6 +271,9 @@ export default {
             this.password = '';
             this.tickets = [];
             this.bookings = [];
+            this.ticketsState = 'idle';
+            this.ticketsErrorMessage = '';
+            this.authErrorMessage = '';
             localStorage.removeItem('busUser');
             localStorage.removeItem('carrierJwt');
         },
@@ -675,6 +716,49 @@ export default {
         },
         removePhoto(index) {
             this.busForm.photos.splice(index, 1);
+        },
+        openShareModal(ticket) {
+            this.selectedShareTicket = ticket;
+            this.showShareModal = true;
+        },
+        getShareUrl(ticket, type = 'web') {
+            if (!ticket) return '';
+            const carrierId = this.user?.carrierId || this.user?.id || ticket.operator_id;
+            if (type === 'telegram') {
+                return `https://t.me/Poputkionline_bot?start=bus_${ticket.id}_c${carrierId}`;
+            }
+            return `https://www.poputki.online/bus-ticket/${ticket.id}?source=carrier_link&ref=c_${carrierId}`;
+        },
+        async copyShareLink(type = 'web') {
+            if (!this.selectedShareTicket) return;
+            const url = this.getShareUrl(this.selectedShareTicket, type);
+            const success = await copyToClipboard(url);
+            if (success) {
+                this.showToastNotification('Ссылка скопирована в буфер обмена!');
+            } else {
+                this.showToastNotification('Не удалось скопировать ссылку');
+            }
+        },
+        shareWhatsApp() {
+            if (!this.selectedShareTicket) return;
+            const t = this.selectedShareTicket;
+            const url = this.getShareUrl(t, 'web');
+            const text = encodeURIComponent(`🚌 Рейс ${t.from_city} → ${t.to_city}\n📅 Дата: ${t.departure_date} в ${t.departure_time}\n💰 Цена: ${t.price} сомони\n\nЗабронировать билет онлайн:\n${url}`);
+            window.open(`https://wa.me/?text=${text}`, '_blank');
+        },
+        shareTelegram() {
+            if (!this.selectedShareTicket) return;
+            const t = this.selectedShareTicket;
+            const tgUrl = this.getShareUrl(t, 'telegram');
+            const text = encodeURIComponent(`🚌 Рейс ${t.from_city} → ${t.to_city}\n📅 Дата: ${t.departure_date} в ${t.departure_time}\n💰 Цена: ${t.price} сомони\n\nКупить билет в Telegram-боте:`);
+            window.open(`https://t.me/share/url?url=${encodeURIComponent(tgUrl)}&text=${text}`, '_blank');
+        },
+        showToastNotification(msg) {
+            this.shareToastMessage = msg;
+            this.shareToast = true;
+            setTimeout(() => {
+                this.shareToast = false;
+            }, 3000);
         }
     },
     computed: {
@@ -860,7 +944,13 @@ watch: {
                     iconBgClass="bg-amber-100 text-amber-500"
                 />
                 <h1 class="text-3xl font-bold mb-2 text-slate-900">Кабинет Перевозчика</h1>
-                <p class="text-slate-500 mb-8">Введите телефон и пароль для входа</p>
+                <p class="text-slate-500 mb-6">Введите телефон и пароль для входа</p>
+                <div v-if="authErrorMessage" class="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-sm font-medium text-left flex items-start gap-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-amber-600 shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                    <span>{{ authErrorMessage }}</span>
+                </div>
                 <input 
                     v-model="phone" 
                     type="tel" 
@@ -1018,7 +1108,21 @@ watch: {
 
                 <!-- Tickets List -->
                 <section v-if="activeTab === 'tickets'" class="space-y-6 lg:space-y-8">
-                    <h2 class="text-2xl lg:text-3xl font-bold text-slate-900">Мои рейсы</h2>
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-2xl lg:text-3xl font-bold text-slate-900">Мои рейсы</h2>
+                        <button 
+                            v-if="ticketsState === 'network_error' || ticketsState === 'forbidden_error'" 
+                            @click="fetchTickets" 
+                            class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            <span>Повторить</span>
+                        </button>
+                    </div>
+
+                    <!-- 1. Loading State -->
                     <div v-if="loading && tickets.length === 0" class="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-pulse">
                         <div v-for="i in 4" :key="'ticket-skel-'+i" class="bg-white rounded-3xl border border-slate-100 p-6 lg:p-8 h-64 shadow-sm relative overflow-hidden">
                              <div class="h-4 w-24 bg-slate-50 rounded mb-6"></div>
@@ -1033,9 +1137,38 @@ watch: {
                              </div>
                         </div>
                     </div>
+
+                    <!-- 2. Forbidden Error State (403) -->
+                    <div v-else-if="ticketsState === 'forbidden_error'" class="bg-red-50 p-8 rounded-[32px] border border-red-100 text-center shadow-sm">
+                        <div class="inline-flex p-3 bg-red-100 text-red-600 rounded-2xl mb-3">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m0 0v2m0-2h2m-2 0H10m4-11a4 4 0 00-8 0v4h8V4zM6 8h12a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V10a2 2 0 012-2z" />
+                            </svg>
+                        </div>
+                        <p class="text-sm font-bold text-red-800">{{ ticketsErrorMessage || 'У вас нет доступа к этому разделу.' }}</p>
+                    </div>
+
+                    <!-- 3. Network / Server Error State -->
+                    <div v-else-if="ticketsState === 'network_error'" class="bg-amber-50 p-8 rounded-[32px] border border-amber-100 text-center shadow-sm space-y-4">
+                        <div class="inline-flex p-3 bg-amber-100 text-amber-600 rounded-2xl mb-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                        </div>
+                        <p class="text-sm font-bold text-amber-900">{{ ticketsErrorMessage || 'Не удалось загрузить рейсы. Попробуйте ещё раз.' }}</p>
+                        <div>
+                            <button @click="fetchTickets" class="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-amber-500/20">
+                                Повторить
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 4. True Empty State (HTTP 200 with 0 items) -->
                     <div v-else-if="!loading && tickets.length === 0" class="bg-white p-8 rounded-[32px] border border-slate-100 text-center text-slate-400 shadow-sm">
                         У вас пока нет созданных рейсов.
                     </div>
+
+                    <!-- 5. Success State with items -->
                     <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         <div v-for="ticket in tickets" :key="ticket.id" class="bg-white rounded-3xl border border-slate-100 p-6 lg:p-8 flex flex-col justify-between shadow-sm overflow-hidden relative group transition-all hover:shadow-md">
                             <div class="absolute right-0 top-0 w-32 h-32 bg-amber-50 rounded-bl-[100px] -z-0 opacity-50"></div>
@@ -1668,5 +1801,78 @@ watch: {
                 </section>
             </main>
         </template>
+
+        <!-- Share Trip Modal -->
+        <div v-if="showShareModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+            <div class="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl border border-slate-100 relative">
+                <button @click="showShareModal = false" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-50 transition-colors">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+
+                <div class="flex items-center space-x-3 mb-6">
+                    <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center font-bold">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-900">Поделиться рейсом</h3>
+                        <p class="text-xs text-slate-400">{{ selectedShareTicket ? `${selectedShareTicket.from_city} → ${selectedShareTicket.to_city}` : '' }}</p>
+                    </div>
+                </div>
+
+                <div class="space-y-4 mb-6">
+                    <!-- Web Link -->
+                    <div class="space-y-1.5">
+                        <label class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Web-ссылка (для браузера)</label>
+                        <div class="flex gap-2">
+                            <input 
+                                readonly 
+                                :value="getShareUrl(selectedShareTicket, 'web')" 
+                                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-600 truncate font-mono focus:outline-none"
+                            />
+                            <button @click="copyShareLink('web')" class="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-amber-500/20 shrink-0">
+                                Скопировать
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Telegram Link -->
+                    <div class="space-y-1.5">
+                        <label class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Telegram-ссылка (для бота)</label>
+                        <div class="flex gap-2">
+                            <input 
+                                readonly 
+                                :value="getShareUrl(selectedShareTicket, 'telegram')" 
+                                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-600 truncate font-mono focus:outline-none"
+                            />
+                            <button @click="copyShareLink('telegram')" class="px-4 py-2.5 bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-sky-500/20 shrink-0">
+                                Скопировать
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Fast Social Sharing -->
+                <div class="grid grid-cols-2 gap-3 pt-4 border-t border-slate-100">
+                    <button @click="shareWhatsApp" class="w-full py-3 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all">
+                        <span>WhatsApp</span>
+                    </button>
+                    <button @click="shareTelegram" class="w-full py-3 bg-sky-50 text-sky-600 hover:bg-sky-100 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all">
+                        <span>Telegram</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast Feedback -->
+        <div v-if="shareToast" class="fixed bottom-6 right-6 z-[110] bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-xl text-xs font-bold flex items-center gap-2 animate-slideUp">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+            </svg>
+            <span>{{ shareToastMessage }}</span>
+        </div>
     </div>
 </template>
