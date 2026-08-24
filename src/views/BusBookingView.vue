@@ -234,16 +234,32 @@ export default {
         async confirmBooking() {
             this.bookingLoading = true;
             try {
-                const res = await api.post('/payments/create-invoice', {
+                let attribution = null;
+                try {
+                    const raw = sessionStorage.getItem(`booking_attribution_${this.ticketId}`);
+                    if (raw) {
+                        attribution = JSON.parse(raw);
+                    }
+                } catch (e) {
+                    console.error('Error reading attribution:', e);
+                }
+
+                const payload = {
                     bus_ticket_id: Number(this.ticketId),
                     passenger_id: this.user.id,
                     seat_numbers: this.selectedSeats,
                     passengers_data: this.passengersData,
                     phone: this.phone,
                     pickup_city: this.pickupCity,
-                    drop_off_city: this.dropOffCity
-                });
+                    drop_off_city: this.dropOffCity,
+                    channel: attribution?.channel || 'web',
+                    source_type: attribution?.source_type || 'direct',
+                    source_id: attribution?.source_id || null
+                };
+
+                const res = await api.post('/payments/create-invoice', payload);
                 sessionStorage.removeItem(STATE_KEY(this.ticketId));
+                sessionStorage.removeItem(`booking_attribution_${this.ticketId}`);
                 // Redirect to SmartPay payment page
                 window.location.href = res.data.payment_link;
             } catch (e) {

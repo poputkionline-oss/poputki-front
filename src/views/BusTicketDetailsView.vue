@@ -104,6 +104,31 @@ export default {
                 openPhone(this.ticket.operator_phone);
             }
         },
+        captureAttribution() {
+            const q = this.$route.query;
+            const ticketId = this.$route.params.id;
+            if (!ticketId) return;
+
+            const source = q.source || (q.ref ? 'carrier_link' : null);
+            const ref = q.ref || null;
+            const channel = q.channel || 'web';
+
+            if (source || ref) {
+                const cleanRef = ref ? String(ref).replace(/^c_?/, '') : null;
+                const attr = {
+                    channel: channel === 'telegram' ? 'telegram' : 'web',
+                    source_type: source === 'carrier_link' || ref ? 'carrier_link' : (source || 'direct'),
+                    source_id: cleanRef,
+                    ticket_id: String(ticketId),
+                    timestamp: Date.now()
+                };
+                try {
+                    sessionStorage.setItem(`booking_attribution_${ticketId}`, JSON.stringify(attr));
+                } catch (e) {
+                    console.error('Error saving web attribution:', e);
+                }
+            }
+        },
         async copyPhone() {
             if (this.ticket?.operator_phone) {
                 const success = await copyToClipboard(this.ticket.operator_phone);
@@ -116,7 +141,10 @@ export default {
             }
         }
     },
-    mounted() { this.fetchTicket(); }
+    mounted() {
+        this.captureAttribution();
+        this.fetchTicket();
+    }
 };
 </script>
 

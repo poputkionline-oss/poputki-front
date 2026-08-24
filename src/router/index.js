@@ -143,13 +143,36 @@ router.beforeEach(async (to, from, next) => {
                 });
             }
         } else if (startParam.startsWith('bus_')) {
-            const busTicketId = startParam.replace('bus_', '');
-            if (busTicketId && !(to.name === 'bus-ticket-details' && to.params.id === busTicketId)) {
-                return next({ 
-                    name: 'bus-ticket-details', 
-                    params: { id: busTicketId },
-                    query: { ...to.query, processedStartParam: '1' } 
-                });
+            const rawParam = startParam.replace('bus_', '');
+            const parts = rawParam.split('_');
+            const busTicketId = parts[0];
+            let refCarrierId = null;
+            if (parts[1]) {
+                refCarrierId = parts[1].replace(/^[cr]/, '');
+            }
+
+            // Capture attribution for this specific ticket without polluting other tickets
+            if (busTicketId) {
+                try {
+                    const attr = {
+                        channel: 'telegram',
+                        source_type: refCarrierId ? 'carrier_link' : 'bot',
+                        source_id: refCarrierId || null,
+                        ticket_id: String(busTicketId),
+                        timestamp: Date.now()
+                    };
+                    sessionStorage.setItem(`booking_attribution_${busTicketId}`, JSON.stringify(attr));
+                } catch (e) {
+                    console.error('Error saving deep link attribution:', e);
+                }
+
+                if (!(to.name === 'bus-ticket-details' && to.params.id === busTicketId)) {
+                    return next({ 
+                        name: 'bus-ticket-details', 
+                        params: { id: busTicketId },
+                        query: { ...to.query, processedStartParam: '1' } 
+                    });
+                }
             }
         }
     }

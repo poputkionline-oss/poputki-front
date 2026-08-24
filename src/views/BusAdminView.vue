@@ -4,6 +4,7 @@ import AppLogo from '../components/AppLogo.vue';
 import { exportPassengerManifestExcel, sortPassengersBySeat } from '../utils/excelExport';
 import { compressImage } from '../utils/imageCompression';
 import { uploadToCloudinaryDirect } from '../utils/cloudinary';
+import { copyToClipboard } from '../telegram';
 import BusSeatSelector from '../components/BusSeatSelector.vue';
 import { 
   Chart as ChartJS, 
@@ -1084,6 +1085,12 @@ watch: {
                                 <div class="flex items-center space-x-3">
                                      <span class="hidden sm:inline-block text-[10px] font-bold px-3 py-1 bg-slate-50 rounded-lg text-slate-400 border border-slate-100 uppercase tracking-widest">{{ ticket.transport_company }}</span>
                                 <div class="flex items-center space-x-2" v-if="ticket.status !== 'completed'">
+                                     <button @click="openShareModal(ticket)" class="px-3 py-2.5 bg-slate-50 text-slate-700 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all border border-slate-100 flex items-center gap-1.5 text-xs font-bold" title="Поделиться рейсом">
+                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                                         </svg>
+                                         <span>Поделиться</span>
+                                     </button>
                                      <button @click="editTicket(ticket)" class="p-2.5 bg-slate-50 text-slate-400 hover:text-amber-500 hover:bg-amber-50 rounded-xl transition-all border border-slate-100" title="Изменить">
                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                                      </button>
