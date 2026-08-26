@@ -9,6 +9,7 @@ import BusSeatSelector from '../components/BusSeatSelector.vue';
 import CarrierBoarding from '../components/carrier/CarrierBoarding.vue';
 import CarrierTripBookings from '../components/carrier/CarrierTripBookings.vue';
 import CarrierFinance from '../components/carrier/CarrierFinance.vue';
+import CarrierMembers from '../components/carrier/CarrierMembers.vue';
 import { 
   Chart as ChartJS, 
   Title, 
@@ -44,7 +45,8 @@ export default {
         BusSeatSelector,
         CarrierBoarding,
         CarrierTripBookings,
-        CarrierFinance
+        CarrierFinance,
+        CarrierMembers
     },
     async mounted() {
         const savedUser = localStorage.getItem('busUser');
@@ -107,6 +109,7 @@ export default {
                 { id: 'create-booking', label: 'Создать бронь' },
                 { id: 'bookings', label: 'Бронирования' },
                 { id: 'finance', label: 'Финансы' },
+                { id: 'team', label: 'Команда' },
                 { id: 'crm', label: 'CRM Пассажиров' }
             ],
             bookingSearch: '',
@@ -971,10 +974,21 @@ export default {
             };
         },
         visibleNavItems() {
-            if (this.user?.role === 'driver') {
-                return this.navItems.filter(item => item.id !== 'finance');
-            }
-            return this.navItems;
+            const role = this.user?.memberRole || this.user?.role;
+            const isOwner = !this.user?.memberRole || this.user?.memberRole === 'owner' || this.user?.role === 'bus_driver';
+            
+            return this.navItems.filter(item => {
+                if (item.id === 'team') {
+                    return isOwner;
+                }
+                if (role === 'driver') {
+                    return ['boarding', 'tickets'].includes(item.id);
+                }
+                if (role === 'accountant') {
+                    return ['finance'].includes(item.id);
+                }
+                return true;
+            });
         }
     },
 watch: {
@@ -1322,18 +1336,6 @@ watch: {
                                           <span>🔄</span>
                                           <span>Обратный</span>
                                       </button>
-                                      <button @click="editTicket(ticket)" class="p-2.5 bg-slate-50 text-slate-400 hover:text-amber-500 hover:bg-amber-50 rounded-xl transition-all border border-slate-100" title="Изменить">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                     </button>
-                                     <button @click="deleteTicket(ticket.id)" class="p-2.5 bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all border border-slate-100" title="Удалить">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                     </button>
-                                     <button @click="completeTicket(ticket)" class="px-4 py-2.5 bg-slate-50 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all border border-slate-100 text-xs font-bold" title="Завершить рейс">
-                                         Завершить рейс
-                                     </button>
-                                     <button @click="initBooking(ticket.id)" class="px-6 py-2.5 bg-amber-500 text-white font-bold rounded-xl hover:bg-amber-600 transition-all shadow-lg shadow-amber-500/20 text-sm">
-                                        Бронировать
-                                     </button>
                                 </div>
                                 <div class="flex items-center space-x-2" v-else>
                                      <button @click="deleteTicket(ticket.id)" class="p-2.5 bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all border border-slate-100" title="Удалить">
