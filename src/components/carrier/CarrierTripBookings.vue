@@ -606,7 +606,8 @@ export default {
 
                                     <!-- Price -->
                                     <td v-if="!isDriver" class="px-5 py-4 font-bold text-slate-900">
-                                        {{ p.totalPrice }} сом
+                                        <span v-if="p.isManual && p.totalPrice === 0" class="text-slate-400 text-[10px] italic">Legacy / Без снимка</span>
+                                        <span v-else>{{ p.totalPrice }} сом</span>
                                     </td>
 
                                     <!-- Commission -->
@@ -616,7 +617,8 @@ export default {
 
                                     <!-- Carrier Amount -->
                                     <td v-if="!isDriver" class="px-5 py-4 font-black text-emerald-600">
-                                        {{ p.carrierAmount }} сом
+                                        <span v-if="p.isManual && p.carrierAmount === 0" class="text-slate-400 text-[10px] italic">Legacy / Без снимка</span>
+                                        <span v-else>{{ p.carrierAmount }} сом</span>
                                     </td>
 
                                     <!-- Boarding Status Badge -->
@@ -695,11 +697,13 @@ export default {
                             <div class="flex items-center gap-3">
                                 <div>
                                     <span class="text-[10px] text-slate-400 uppercase block font-bold">Оплата</span>
-                                    <span class="font-bold text-slate-900">{{ p.totalPrice }} сом</span>
+                                    <span v-if="p.isManual && p.totalPrice === 0" class="text-slate-400 text-[10px] italic">Legacy</span>
+                                    <span v-else class="font-bold text-slate-900">{{ p.totalPrice }} сом</span>
                                 </div>
                                 <div>
                                     <span class="text-[10px] text-emerald-600 uppercase block font-bold">Перевозчику</span>
-                                    <span class="font-black text-emerald-600">{{ p.carrierAmount }} сом</span>
+                                    <span v-if="p.isManual && p.carrierAmount === 0" class="text-slate-400 text-[10px] italic">Legacy</span>
+                                    <span v-else class="font-black text-emerald-600">{{ p.carrierAmount }} сом</span>
                                 </div>
                             </div>
                             <div class="flex items-center gap-2">

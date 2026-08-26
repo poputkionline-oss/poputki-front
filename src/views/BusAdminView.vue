@@ -8,6 +8,7 @@ import { copyToClipboard } from '../telegram';
 import BusSeatSelector from '../components/BusSeatSelector.vue';
 import CarrierBoarding from '../components/carrier/CarrierBoarding.vue';
 import CarrierTripBookings from '../components/carrier/CarrierTripBookings.vue';
+import CarrierFinance from '../components/carrier/CarrierFinance.vue';
 import { 
   Chart as ChartJS, 
   Title, 
@@ -42,7 +43,8 @@ export default {
         BarChart: Bar,
         BusSeatSelector,
         CarrierBoarding,
-        CarrierTripBookings
+        CarrierTripBookings,
+        CarrierFinance
     },
     async mounted() {
         const savedUser = localStorage.getItem('busUser');
@@ -104,6 +106,7 @@ export default {
                 { id: 'create', label: 'Создать рейс' },
                 { id: 'create-booking', label: 'Создать бронь' },
                 { id: 'bookings', label: 'Бронирования' },
+                { id: 'finance', label: 'Финансы' },
                 { id: 'crm', label: 'CRM Пассажиров' }
             ],
             bookingSearch: '',
@@ -903,6 +906,12 @@ export default {
                     borderWidth: 0
                 }]
             };
+        },
+        visibleNavItems() {
+            if (this.user?.role === 'driver') {
+                return this.navItems.filter(item => item.id !== 'finance');
+            }
+            return this.navItems;
         }
     },
 watch: {
@@ -1026,7 +1035,7 @@ watch: {
                 </div>
 <br>                <nav class="flex-1 px-4 space-y-2 overflow-y-auto">
                     <button 
-                        v-for="item in navItems" 
+                        v-for="item in visibleNavItems" 
                         :key="item.id"
                         @click="activeTab = item.id; mobileMenuOpen = false; if(item.id !== 'create') { isEditingTicket = false; editingTicketId = null; }"
                         class="w-full px-4 py-3 rounded-xl flex items-center space-x-3 transition-all group"
@@ -1276,6 +1285,14 @@ watch: {
                         @refresh="fetchBookings(); fetchTickets()"
                         @edit-booking="initEditBooking"
                         @delete-booking="deleteBooking"
+                    />
+                </section>
+
+                <!-- Finance Section -->
+                <section v-if="activeTab === 'finance'" class="space-y-6">
+                    <CarrierFinance 
+                        :user="user"
+                        @select-trip-bookings="(ticketId) => { activeTab = 'bookings'; }"
                     />
                 </section>
                 <!-- CRM section -->
