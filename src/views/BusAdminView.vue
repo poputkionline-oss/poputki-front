@@ -6,6 +6,7 @@ import { compressImage } from '../utils/imageCompression';
 import { uploadToCloudinaryDirect } from '../utils/cloudinary';
 import { copyToClipboard } from '../telegram';
 import BusSeatSelector from '../components/BusSeatSelector.vue';
+import CarrierBoarding from '../components/carrier/CarrierBoarding.vue';
 import { 
   Chart as ChartJS, 
   Title, 
@@ -38,7 +39,8 @@ export default {
         LineChart: Line,
         PieChart: Pie,
         BarChart: Bar,
-        BusSeatSelector
+        BusSeatSelector,
+        CarrierBoarding
     },
     async mounted() {
         const savedUser = localStorage.getItem('busUser');
@@ -95,6 +97,7 @@ export default {
             mobileMenuOpen: false,
             navItems: [
                 { id: 'dashboard', label: 'Дашборд' },
+                { id: 'boarding', label: 'Посадка' },
                 { id: 'tickets', label: 'Мои рейсы' },
                 { id: 'create', label: 'Создать рейс' },
                 { id: 'create-booking', label: 'Создать бронь' },
@@ -201,8 +204,11 @@ export default {
                 promises.push(this.fetchStats());
             } else if (this.activeTab === 'tickets') {
                 promises.push(this.fetchTickets());
-            } else if (this.activeTab === 'bookings' || this.activeTab === 'crm') {
+            } else if (this.activeTab === 'bookings' || this.activeTab === 'crm' || this.activeTab === 'boarding') {
                 promises.push(this.fetchBookings());
+                if (this.activeTab === 'boarding' && this.tickets.length === 0) {
+                    promises.push(this.fetchTickets());
+                }
             }
             await Promise.all(promises);
         },
@@ -1039,6 +1045,16 @@ watch: {
             <!-- Main Content -->
             <main class="flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6 lg:p-10 pt-20 lg:pt-10 w-full overflow-x-hidden">
                 
+                <!-- Boarding Section -->
+                <section v-if="activeTab === 'boarding'" class="space-y-6">
+                    <CarrierBoarding 
+                        :tickets="tickets" 
+                        :bookings="bookings" 
+                        :loading="loading"
+                        @refresh="fetchBookings(); fetchTickets()"
+                    />
+                </section>
+
                 <!-- Dashboard Section -->
                 <section v-if="activeTab === 'dashboard'" class="space-y-6 lg:space-y-10">
                     <div class="flex justify-between items-end">
