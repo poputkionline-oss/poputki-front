@@ -386,6 +386,69 @@ export default {
             };
             this.activeTab = 'create';
         },
+        duplicateTicket(ticket) {
+            this.isEditingTicket = false;
+            this.editingTicketId = null;
+            this.busForm = {
+                transport_company: ticket.transport_company || '',
+                from_city: ticket.from_city || '',
+                from_address: ticket.from_address || '',
+                to_city: ticket.to_city || '',
+                to_address: ticket.to_address || '',
+                departure_date: '',
+                departure_time: ticket.departure_time ? ticket.departure_time.substring(0, 5) : '',
+                arrival_date: '',
+                arrival_time: ticket.arrival_time ? ticket.arrival_time.substring(0, 5) : '',
+                duration_hours: ticket.duration_minutes ? (ticket.duration_minutes / 60).toFixed(1) : '',
+                price: ticket.price || '',
+                premium_price: ticket.premium_price || '',
+                total_seats: ticket.total_seats || 53,
+                floor1_seats: ticket.floor1_seats || 20,
+                floor2_seats: ticket.floor2_seats || 56,
+                bus_type: ticket.bus_type || 'single',
+                passenger_comments: ticket.passenger_comments || '',
+                intermediate_stops: JSON.parse(JSON.stringify(ticket.intermediate_stops || [])),
+                photos: JSON.parse(JSON.stringify(ticket.photos || [])),
+                accept_terms: true
+            };
+            this.activeTab = 'create';
+            alert('Данные рейса скопированы. Выберите дату отправления для нового рейса.');
+        },
+        reverseTicket(ticket) {
+            this.isEditingTicket = false;
+            this.editingTicketId = null;
+            const stops = JSON.parse(JSON.stringify(ticket.intermediate_stops || []));
+            const reversedStops = stops.reverse().map(s => ({
+                city: s.city,
+                address: s.address || '',
+                time: '' // Reset time for opposite direction
+            }));
+
+            this.busForm = {
+                transport_company: ticket.transport_company || '',
+                from_city: ticket.to_city || '',
+                from_address: ticket.to_address || '',
+                to_city: ticket.from_city || '',
+                to_address: ticket.from_address || '',
+                departure_date: '',
+                departure_time: ticket.departure_time ? ticket.departure_time.substring(0, 5) : '',
+                arrival_date: '',
+                arrival_time: ticket.arrival_time ? ticket.arrival_time.substring(0, 5) : '',
+                duration_hours: ticket.duration_minutes ? (ticket.duration_minutes / 60).toFixed(1) : '',
+                price: ticket.price || '',
+                premium_price: ticket.premium_price || '',
+                total_seats: ticket.total_seats || 53,
+                floor1_seats: ticket.floor1_seats || 20,
+                floor2_seats: ticket.floor2_seats || 56,
+                bus_type: ticket.bus_type || 'single',
+                passenger_comments: ticket.passenger_comments || '',
+                intermediate_stops: reversedStops,
+                photos: JSON.parse(JSON.stringify(ticket.photos || [])),
+                accept_terms: true
+            };
+            this.activeTab = 'create';
+            alert('Маршрут обратного рейса подготовлен. Укажите дату и время отправления.');
+        },
         async updateBusTicket() {
             if (!this.validateBusForm()) return;
             this.loading = true;
@@ -1251,7 +1314,15 @@ watch: {
                                          </svg>
                                          <span>Поделиться</span>
                                      </button>
-                                     <button @click="editTicket(ticket)" class="p-2.5 bg-slate-50 text-slate-400 hover:text-amber-500 hover:bg-amber-50 rounded-xl transition-all border border-slate-100" title="Изменить">
+                                     <button @click="duplicateTicket(ticket)" class="px-3 py-2.5 bg-slate-50 text-slate-700 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all border border-slate-100 flex items-center gap-1.5 text-xs font-bold" title="Повторить рейс">
+                                          <span>📋</span>
+                                          <span>Повторить</span>
+                                      </button>
+                                      <button @click="reverseTicket(ticket)" class="px-3 py-2.5 bg-slate-50 text-slate-700 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all border border-slate-100 flex items-center gap-1.5 text-xs font-bold" title="Создать обратный рейс">
+                                          <span>🔄</span>
+                                          <span>Обратный</span>
+                                      </button>
+                                      <button @click="editTicket(ticket)" class="p-2.5 bg-slate-50 text-slate-400 hover:text-amber-500 hover:bg-amber-50 rounded-xl transition-all border border-slate-100" title="Изменить">
                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                                      </button>
                                      <button @click="deleteTicket(ticket.id)" class="p-2.5 bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all border border-slate-100" title="Удалить">
