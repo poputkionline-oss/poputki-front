@@ -420,9 +420,10 @@ export default {
         reverseTicket(ticket) {
             this.isEditingTicket = false;
             this.editingTicketId = null;
-            const stops = JSON.parse(JSON.stringify(ticket.intermediate_stops || []));
-            const reversedStops = stops.reverse().map(s => ({
-                city: s.city,
+
+            // Reverse intermediate stops order and reset times
+            const reversedStops = [...(ticket.intermediate_stops || [])].reverse().map(s => ({
+                city: s.city || '',
                 address: s.address || '',
                 time: '' // Reset time for opposite direction
             }));
@@ -433,11 +434,9 @@ export default {
                 from_address: ticket.to_address || '',
                 to_city: ticket.from_city || '',
                 to_address: ticket.from_address || '',
-                departure_date: '',
-                departure_time: ticket.departure_time ? ticket.departure_time.substring(0, 5) : '',
-                arrival_date: '',
-                arrival_time: ticket.arrival_time ? ticket.arrival_time.substring(0, 5) : '',
-                duration_hours: ticket.duration_minutes ? (ticket.duration_minutes / 60).toFixed(1) : '',
+                departure_date: '', // Force choosing new date
+                departure_time: ticket.departure_time || '08:00',
+                duration_hours: ticket.duration_hours || '',
                 price: ticket.price || '',
                 premium_price: ticket.premium_price || '',
                 total_seats: ticket.total_seats || 53,
@@ -450,7 +449,7 @@ export default {
                 accept_terms: true
             };
             this.activeTab = 'create';
-            alert('Маршрут обратного рейса подготовлен. Укажите дату и время отправления.');
+            alert('Обратный рейс сформирован: маршрут развернут в обратную сторону. Выберите дату отправления.');
         },
         async updateBusTicket() {
             if (!this.validateBusForm()) return;
@@ -1322,26 +1321,26 @@ watch: {
                                 <div class="flex flex-wrap items-center gap-2">
                                      <span class="hidden sm:inline-block text-[10px] font-bold px-3 py-1 bg-slate-50 rounded-lg text-slate-400 border border-slate-100 uppercase tracking-widest">{{ ticket.transport_company }}</span>
                                      <div class="flex flex-wrap items-center gap-2" v-if="ticket.status !== 'completed'">
-                                     <button @click="openShareModal(ticket)" class="px-3 py-2.5 bg-slate-50 text-slate-700 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all border border-slate-100 flex items-center gap-1.5 text-xs font-bold" title="Поделиться рейсом">
-                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                                         </svg>
-                                         <span>Поделиться</span>
-                                     </button>
-                                     <button @click="duplicateTicket(ticket)" class="px-3 py-2.5 bg-slate-50 text-slate-700 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all border border-slate-100 flex items-center gap-1.5 text-xs font-bold" title="Повторить рейс">
-                                          <span>📋</span>
-                                          <span>Повторить</span>
-                                      </button>
-                                      <button @click="reverseTicket(ticket)" class="px-3 py-2.5 bg-slate-50 text-slate-700 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all border border-slate-100 flex items-center gap-1.5 text-xs font-bold" title="Создать обратный рейс">
-                                          <span>🔄</span>
-                                          <span>Обратный</span>
-                                      </button>
-                                </div>
-                                <div class="flex items-center space-x-2" v-else>
-                                     <button @click="deleteTicket(ticket.id)" class="p-2.5 bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all border border-slate-100" title="Удалить">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                     </button>
-                                </div>
+                                         <button @click="openShareModal(ticket)" class="px-3 py-2.5 bg-slate-50 text-slate-700 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all border border-slate-100 flex items-center gap-1.5 text-xs font-bold" title="Поделиться рейсом">
+                                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                                             </svg>
+                                             <span>Поделиться</span>
+                                         </button>
+                                         <button @click="duplicateTicket(ticket)" class="px-3 py-2.5 bg-slate-50 text-slate-700 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all border border-slate-100 flex items-center gap-1.5 text-xs font-bold" title="Повторить рейс">
+                                             <span>📋</span>
+                                             <span>Повторить</span>
+                                         </button>
+                                         <button @click="reverseTicket(ticket)" class="px-3 py-2.5 bg-slate-50 text-slate-700 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all border border-slate-100 flex items-center gap-1.5 text-xs font-bold" title="Создать обратный рейс">
+                                             <span>🔄</span>
+                                             <span>Обратный</span>
+                                         </button>
+                                     </div>
+                                     <div class="flex items-center space-x-2" v-else>
+                                         <button @click="deleteTicket(ticket.id)" class="p-2.5 bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all border border-slate-100" title="Удалить">
+                                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                         </button>
+                                     </div>
                                 </div>
                             </div>
                         </div>
@@ -1366,6 +1365,14 @@ watch: {
                     <CarrierFinance 
                         :user="user"
                         @select-trip-bookings="(ticketId) => { activeTab = 'bookings'; }"
+                    />
+                </section>
+
+                <!-- Team Management Section -->
+                <section v-if="activeTab === 'team'" class="space-y-6">
+                    <CarrierMembers 
+                        :user="user"
+                        :tickets="tickets"
                     />
                 </section>
                 <!-- CRM section -->
