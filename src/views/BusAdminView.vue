@@ -7,6 +7,7 @@ import { uploadToCloudinaryDirect } from '../utils/cloudinary';
 import { copyToClipboard } from '../telegram';
 import BusSeatSelector from '../components/BusSeatSelector.vue';
 import CarrierBoarding from '../components/carrier/CarrierBoarding.vue';
+import CarrierTripBookings from '../components/carrier/CarrierTripBookings.vue';
 import { 
   Chart as ChartJS, 
   Title, 
@@ -40,7 +41,8 @@ export default {
         PieChart: Pie,
         BarChart: Bar,
         BusSeatSelector,
-        CarrierBoarding
+        CarrierBoarding,
+        CarrierTripBookings
     },
     async mounted() {
         const savedUser = localStorage.getItem('busUser');
@@ -1233,7 +1235,7 @@ watch: {
                                 </div>
                                 <div class="flex flex-wrap items-center gap-2">
                                      <span class="hidden sm:inline-block text-[10px] font-bold px-3 py-1 bg-slate-50 rounded-lg text-slate-400 border border-slate-100 uppercase tracking-widest">{{ ticket.transport_company }}</span>
-                                <div class="flex flex-wrap items-center gap-2" v-if="ticket.status !== 'completed'">
+                                     <div class="flex flex-wrap items-center gap-2" v-if="ticket.status !== 'completed'">
                                      <button @click="openShareModal(ticket)" class="px-3 py-2.5 bg-slate-50 text-slate-700 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all border border-slate-100 flex items-center gap-1.5 text-xs font-bold" title="Поделиться рейсом">
                                          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
@@ -1264,139 +1266,17 @@ watch: {
                     </div>
                 </section>
 
-                <!-- Bookings section -->
-                <section v-if="activeTab === 'bookings'" class="space-y-6 lg:space-y-8">
-                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                         <div>
-                            <h2 class="text-2xl lg:text-3xl font-bold text-slate-900">Бронирования</h2>
-                            <p class="text-xs text-slate-400 mt-1 uppercase tracking-widest font-black">Выберите рейс для просмотра пассажиров</p>
-                         </div>
-                         <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-                            <div class="relative w-full sm:w-80">
-                                <select v-model="selectedBookingRideId" class="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-amber-500 text-slate-900 shadow-sm appearance-none font-bold">
-                                    <option value="">-- Выберите рейс --</option>
-                                    <option v-for="t in tickets" :key="t.id" :value="t.id">
-                                        {{ t.from_city }} → {{ t.to_city }} ({{ t.departure_date }} {{ t.departure_time }})
-                                    </option>
-                                </select>
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-                            </div>
-                            <div class="relative w-full sm:w-64" v-if="selectedBookingRideId">
-                                <input v-model="bookingSearch" placeholder="Поиск по имени..." class="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-amber-500 text-slate-900 shadow-sm" />
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                            </div>
-                            <button 
-                                v-if="selectedBookingRideId && passengerManifest.length > 0"
-                                @click="exportToExcel" 
-                                class="w-full sm:w-auto px-4 py-2.5 bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 text-sm whitespace-nowrap"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                Экспорт .xlsx
-                            </button>
-                         </div>
-                     </div>
-
-                      <div v-if="loading" class="bg-white rounded-[32px] border border-slate-100 overflow-hidden shadow-sm animate-pulse">
-                         <div class="h-16 bg-slate-50 border-b border-slate-100 mb-2"></div>
-                         <div class="p-6 space-y-4">
-                             <div v-for="i in 5" :key="'booking-skel-'+i" class="flex justify-between items-center py-4 border-b border-slate-50 last:border-0">
-                                 <div class="h-4 w-8 bg-slate-50 rounded"></div>
-                                 <div class="h-4 w-48 bg-slate-50 rounded"></div>
-                                 <div class="h-4 w-12 bg-slate-50 rounded"></div>
-                                 <div class="h-4 w-24 bg-slate-50 rounded"></div>
-                                 <div class="h-4 w-32 bg-slate-50 rounded"></div>
-                             </div>
-                         </div>
-                      </div>
-                     <div v-else-if="passengerManifest.length === 0" class="bg-white p-20 rounded-[40px] border border-slate-100 text-center shadow-sm">
-                        <div class="bg-slate-50 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                        </div>
-                        <p class="text-slate-400">На этот рейс пока нет бронирований.</p>
-                    </div>
-                     <div v-else class="bg-white rounded-[32px] border border-slate-100 overflow-hidden shadow-sm">
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left border-collapse min-w-[1000px]">
-                                <thead>
-                                    <tr class="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-500 border-b border-slate-100">
-                                        <th class="px-6 py-5">#</th>
-                                        <th class="px-6 py-5">ФИО ПАССАЖИРА</th>
-                                        <th class="px-6 py-5">МЕСТО</th>
-                                        <th class="px-6 py-5">ПОЛ</th>
-                                        <th class="px-6 py-5">ДАТА РОЖДЕНИЯ</th>
-                                        <th class="px-6 py-5">ДОКУМЕНТ</th>
-                                        <th class="px-6 py-5">ГРАЖДАНСТВО</th>
-                                        <th class="px-6 py-5">МАРШРУТ (П/В)</th>
-                                        <th class="px-6 py-5">КОНТАКТ</th>
-                                        <th class="px-6 py-5">ОПЛАТА</th>
-                                        <th class="px-6 py-5">ДАТА ВЫСТАВЛЕНИЯ СЧЕТА</th>
-                                        <th class="px-6 py-5">ДЕЙСТВИЯ</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-slate-50">
-                                    <tr v-for="(p, idx) in passengerManifest" :key="idx" class="hover:bg-slate-50/20 transition-colors">
-                                        <td class="px-6 py-4">
-                                            <span class="text-slate-400 font-bold text-[11px]">{{ idx + 1 }}</span>
-                                        </td>
-                                        <td class="px-6 py-4">
-                                            <div class="font-bold text-slate-900 text-sm whitespace-nowrap">{{ p.lastName }} {{ p.firstName }} {{ p.middleName }}</div>
-                                        </td>
-                                        <td class="px-6 py-4">
-                                            <span class="px-2.5 py-1 bg-amber-50 text-amber-600 rounded-lg text-xs font-black border border-amber-100/50">{{ p.seat }}</span>
-                                        </td>
-                                        <td class="px-6 py-4 text-xs text-slate-600 uppercase font-bold tracking-tighter">
-                                            {{ p.gender === 'male' ? 'Муж' : (p.gender === 'female' ? 'Жен' : '—') }}
-                                        </td>
-                                        <td class="px-6 py-4 text-xs text-slate-600 font-medium font-mono tracking-tighter">{{ p.birthDate || '—' }}</td>
-                                        <td class="px-6 py-4 text-[11px] text-slate-600 font-medium tracking-tight">
-                                            {{ p.docType }} {{ p.docNumber }}
-                                         </td>
-                                         <td class="px-6 py-4 text-xs text-slate-600 font-medium tracking-tighter">
-                                             {{ p.citizenship || '—' }}
-                                        </td>
-                                        <td class="px-6 py-4">
-                                            <div class="text-[10px] text-slate-500 uppercase font-bold tracking-tight">
-                                                {{ p.pickup_city || '—' }}
-                                            </div>
-                                            <div class="text-[10px] text-amber-600 uppercase font-black tracking-widest mt-0.5">
-                                                {{ p.drop_off_city || '—' }}
-                                            </div>
-                                        </td>
-                                        <td class="px-6 py-4">
-                                            <div class="flex items-center gap-1.5 whitespace-nowrap">
-                                                <span class="text-[11px] font-bold text-slate-900 tracking-tighter">{{ p.contactPhone }}</span>
-                                            </div>
-                                        </td>
-                                        <td class="px-6 py-4">
-                                            <div class="flex items-center gap-2">
-                                                <span class="text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border leading-none inline-block border-slate-100"
-                                                    :class="{
-                                                        'bg-blue-50 text-blue-600 border-blue-100 mb-1': p.paymentStatus === 'Ручная',
-                                                        'bg-emerald-50 text-emerald-600 border-emerald-100': p.paymentStatus === 'Оплачено',
-                                                        'bg-amber-50 text-amber-600 border-amber-100': p.paymentStatus === 'Ожидает оплаты'
-                                                    }">
-                                                    {{ p.paymentStatus }}
-                                                </span>
-                                            </div>
-                                        </td>
-                                        <td class="px-6 py-4">
-                                            <span class="text-[10px] text-slate-500 font-mono whitespace-nowrap">{{ p.createdAt ? new Date(p.createdAt).toLocaleDateString('ru-RU') : '—' }}</span>
-                                        </td>
-                                        <td class="px-6 py-4">
-                                            <div class="flex items-center gap-3">
-                                                <button @click="initEditBooking(p.originalBookingId)" class="p-1 text-slate-400 hover:text-amber-500 transition-colors" title="Редактировать">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                                </button>
-                                                <button @click="deleteBooking(p.originalBookingId)" class="p-1 text-slate-400 hover:text-red-500 transition-colors" title="Удалить бронь">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                <!-- Bookings section with Trip Financial Summary -->
+                <section v-if="activeTab === 'bookings'" class="space-y-6">
+                    <CarrierTripBookings 
+                        :tickets="tickets" 
+                        :bookings="bookings" 
+                        :loading="loading"
+                        :user="user"
+                        @refresh="fetchBookings(); fetchTickets()"
+                        @edit-booking="initEditBooking"
+                        @delete-booking="deleteBooking"
+                    />
                 </section>
                 <!-- CRM section -->
                 <section v-if="activeTab === 'crm'" class="space-y-6 lg:space-y-8">
