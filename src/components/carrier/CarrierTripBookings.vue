@@ -70,11 +70,13 @@ export default {
                 const commAmount = Number(b.commission_amount ?? (isManual ? 0 : Math.round(totalPrice * 0.1)));
                 const carrierAmount = Number(b.carrier_amount ?? Math.max(0, totalPrice - commAmount));
 
-                let paymentLabel = 'Оплачено';
+                let paymentLabel = 'Подтверждено';
                 if (b.status === 'pending_payment') {
                     paymentLabel = 'Ожидает оплаты';
+                } else if (b.status === 'cancelled') {
+                    paymentLabel = 'Отменено';
                 } else if (isManual || totalPrice === 0) {
-                    paymentLabel = 'Ручная';
+                    paymentLabel = 'Ручная бронь';
                 }
 
                 let sourceLabel = 'Онлайн: Web';
@@ -171,6 +173,24 @@ export default {
 
             return manifest.sort((a, b) => a.seatInt - b.seatInt);
         },
+        statusCounts() {
+            const all = this.ticketPassengers;
+            return {
+                all: all.length,
+                confirmed: all.filter(p => p.status === 'confirmed').length,
+                pending_payment: all.filter(p => p.status === 'pending_payment').length,
+                cancelled: all.filter(p => p.status === 'cancelled').length
+            };
+        },
+        boardingCounts() {
+            const confirmed = this.ticketPassengers.filter(p => p.status === 'confirmed');
+            return {
+                all: confirmed.length,
+                boarded: confirmed.filter(p => p.boardingStatus === 'boarded').length,
+                pending_boarding: confirmed.filter(p => p.boardingStatus === 'pending_boarding').length,
+                no_show: confirmed.filter(p => p.boardingStatus === 'no_show').length
+            };
+        },
         filteredPassengers() {
             let list = this.ticketPassengers;
 
@@ -181,17 +201,20 @@ export default {
                 list = list.filter(p => p.isManual);
             }
 
-            // Payment status filter
+            // Primary Payment / Business Status filter
             if (this.paymentFilter === 'confirmed') {
                 list = list.filter(p => p.status === 'confirmed');
             } else if (this.paymentFilter === 'pending_payment') {
                 list = list.filter(p => p.status === 'pending_payment');
+            } else if (this.paymentFilter === 'cancelled') {
+                list = list.filter(p => p.status === 'cancelled');
             }
 
-            // Boarding filter
-            if (this.boardingFilter !== 'all') {
-                list = list.filter(p => p.boardingStatus === this.boardingFilter);
+            // Secondary Boarding filter (active only for confirmed bookings)
+            if (this.boardingFilter !== 'all' && this.paymentFilter !== 'pending_payment' && this.paymentFilter !== 'cancelled') {
+                list = list.filter(p => p.status === 'confirmed' && p.boardingStatus === this.boardingFilter);
             }
+
 
             // Search query
             if (this.searchQuery.trim()) {
@@ -218,6 +241,7 @@ export default {
                 manual: all.filter(p => p.isManual).length
             };
         }
+
     },
     watch: {
         tickets: {
@@ -395,6 +419,9 @@ export default {
                             <div class="text-lg font-black text-amber-400">
                                 {{ summary?.booked_seats || 0 }} / {{ summary?.capacity || selectedTicket.total_seats }} мест
                             </div>
+                            <div v-if="summary?.held_seats > 0" class="text-[9px] text-amber-300 font-bold">
+                                ({{ summary.confirmed_seats || 0 }} продано, {{ summary.held_seats }} ждут оплаты)
+                            </div>
                         </div>
                         <div class="text-2xl">🚌</div>
                     </div>
@@ -453,66 +480,99 @@ export default {
                 <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     <!-- Filters Tabs Group -->
                     <div class="flex flex-wrap items-center gap-2">
-                        <!-- SOURCE FILTER -->
+                        <!-- PRIMARY STATUS / PAYMENT FILTER -->
                         <div class="flex bg-slate-100 p-1 rounded-2xl text-xs font-bold">
                             <button 
-                                @click="sourceFilter = 'all'" 
-                                :class="sourceFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
+                                @click="paymentFilter = 'all'; boardingFilter = 'all'" 
+                                :class="paymentFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
                                 class="px-3 py-1.5 rounded-xl transition-all"
                             >
-                                Все источники ({{ sourceCounts.all }})
+                                Все ({{ statusCounts.all }})
                             </button>
                             <button 
-                                @click="sourceFilter = 'online'" 
-                                :class="sourceFilter === 'online' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
+                                @click="paymentFilter = 'confirmed'" 
+                                :class="paymentFilter === 'confirmed' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
                                 class="px-3 py-1.5 rounded-xl transition-all"
                             >
-                                Онлайн ({{ sourceCounts.online }})
+                                ✓ Подтверждены ({{ statusCounts.confirmed }})
                             </button>
                             <button 
-                                @click="sourceFilter = 'manual'" 
-                                :class="sourceFilter === 'manual' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
+                                @click="paymentFilter = 'pending_payment'; boardingFilter = 'all'" 
+                                :class="paymentFilter === 'pending_payment' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-700 hover:bg-amber-50'" 
+                                class="px-3 py-1.5 rounded-xl transition-all font-black flex items-center gap-1"
+                            >
+                                <span>⏳ Ожидают оплаты</span>
+                                <span v-if="statusCounts.pending_payment > 0" class="px-1.5 py-0.2 text-[10px] rounded-full" :class="paymentFilter === 'pending_payment' ? 'bg-white text-amber-900' : 'bg-amber-200 text-amber-900'">{{ statusCounts.pending_payment }}</span>
+                            </button>
+                            <button 
+                                @click="paymentFilter = 'cancelled'; boardingFilter = 'all'" 
+                                :class="paymentFilter === 'cancelled' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-400 hover:text-slate-700'" 
                                 class="px-3 py-1.5 rounded-xl transition-all"
                             >
-                                Ручные ({{ sourceCounts.manual }})
+                                Отменены ({{ statusCounts.cancelled }})
                             </button>
                         </div>
 
-                        <!-- BOARDING FILTER -->
-                        <div class="flex bg-slate-100 p-1 rounded-2xl text-xs font-bold">
+                        <!-- BOARDING SUB-FILTER (Active only for confirmed/all) -->
+                        <div v-if="paymentFilter !== 'pending_payment' && paymentFilter !== 'cancelled'" class="flex bg-slate-100 p-1 rounded-2xl text-xs font-bold">
                             <button 
                                 @click="boardingFilter = 'all'" 
                                 :class="boardingFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
-                                class="px-3 py-1.5 rounded-xl transition-all"
+                                class="px-2.5 py-1.5 rounded-xl transition-all"
                             >
                                 Посадка: Все
                             </button>
                             <button 
                                 @click="boardingFilter = 'boarded'" 
                                 :class="boardingFilter === 'boarded' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
-                                class="px-3 py-1.5 rounded-xl transition-all"
+                                class="px-2.5 py-1.5 rounded-xl transition-all"
                             >
-                                ✓ Сели
+                                ✓ Сели ({{ boardingCounts.boarded }})
                             </button>
                             <button 
                                 @click="boardingFilter = 'pending_boarding'" 
-                                :class="boardingFilter === 'pending_boarding' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
-                                class="px-3 py-1.5 rounded-xl transition-all"
+                                :class="boardingFilter === 'pending_boarding' ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
+                                class="px-2.5 py-1.5 rounded-xl transition-all"
                             >
-                                ⏳ Ожидают
+                                ⏳ Ждут ({{ boardingCounts.pending_boarding }})
                             </button>
                             <button 
                                 @click="boardingFilter = 'no_show'" 
                                 :class="boardingFilter === 'no_show' ? 'bg-white text-rose-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
-                                class="px-3 py-1.5 rounded-xl transition-all"
+                                class="px-2.5 py-1.5 rounded-xl transition-all"
                             >
-                                ✕ No-show
+                                ✕ No-show ({{ boardingCounts.no_show }})
+                            </button>
+                        </div>
+
+                        <!-- SOURCE FILTER -->
+                        <div class="flex bg-slate-100 p-1 rounded-2xl text-xs font-bold">
+                            <button 
+                                @click="sourceFilter = 'all'" 
+                                :class="sourceFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
+                                class="px-2.5 py-1.5 rounded-xl transition-all"
+                            >
+                                Все
+                            </button>
+                            <button 
+                                @click="sourceFilter = 'online'" 
+                                :class="sourceFilter === 'online' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
+                                class="px-2.5 py-1.5 rounded-xl transition-all"
+                            >
+                                Онлайн
+                            </button>
+                            <button 
+                                @click="sourceFilter = 'manual'" 
+                                :class="sourceFilter === 'manual' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
+                                class="px-2.5 py-1.5 rounded-xl transition-all"
+                            >
+                                Ручные
                             </button>
                         </div>
                     </div>
 
                     <!-- Search Box -->
-                    <div class="relative w-full lg:w-80">
+                    <div class="relative w-full lg:w-72">
                         <input 
                             v-model="searchQuery" 
                             type="text"
@@ -532,7 +592,7 @@ export default {
                 <div class="text-3xl">👥</div>
                 <div class="font-bold text-slate-700">Бронирования не найдены</div>
                 <p class="text-xs text-slate-400">
-                    {{ searchQuery ? 'По вашему фильтру ничего не найдено.' : 'На этот рейс пока нет зарегистрированных пассажиров.' }}
+                    {{ searchQuery ? 'По вашему фильтру ничего не найдено.' : 'На этот рейс пока нет зарегистрированных пассажиров по выбранным критериям.' }}
                 </p>
             </div>
 
@@ -552,6 +612,7 @@ export default {
                                     <th v-if="!isDriver" class="px-5 py-4">СТОИМОСТЬ</th>
                                     <th v-if="!isDriver" class="px-5 py-4">КОМИССИЯ (10%)</th>
                                     <th v-if="!isDriver" class="px-5 py-4">ПЕРЕВОЗЧИКУ</th>
+                                    <th class="px-5 py-4">ОПЛАТА</th>
                                     <th class="px-5 py-4">ПОСАДКА</th>
                                     <th class="px-5 py-4 text-right">ДЕЙСТВИЯ</th>
                                 </tr>
@@ -621,17 +682,43 @@ export default {
                                         <span v-else>{{ p.carrierAmount }} сом</span>
                                     </td>
 
-                                    <!-- Boarding Status Badge -->
+                                    <!-- Payment / Business Status -->
                                     <td class="px-5 py-4">
                                         <span 
+                                            v-if="p.status === 'pending_payment'"
+                                            class="inline-block px-2.5 py-1 rounded-lg text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-300"
+                                        >
+                                            ⏳ Ожидает оплаты
+                                        </span>
+                                        <span 
+                                            v-else-if="p.status === 'cancelled'"
+                                            class="inline-block px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-500"
+                                        >
+                                            ✕ Отменено
+                                        </span>
+                                        <span 
+                                            v-else
+                                            class="inline-block px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200"
+                                        >
+                                            ✓ Подтверждено
+                                        </span>
+                                    </td>
+
+                                    <!-- Boarding Status Badge -->
+                                    <td class="px-5 py-4">
+                                        <span v-if="p.status !== 'confirmed'" class="text-slate-300 font-bold px-2 py-1">
+                                            —
+                                        </span>
+                                        <span 
+                                            v-else
                                             :class="{
                                                 'bg-emerald-100 text-emerald-800': p.boardingStatus === 'boarded',
                                                 'bg-rose-100 text-rose-800': p.boardingStatus === 'no_show',
-                                                'bg-amber-100 text-amber-800': p.boardingStatus === 'pending_boarding'
+                                                'bg-sky-50 text-sky-800 border border-sky-200': p.boardingStatus === 'pending_boarding'
                                             }"
-                                            class="inline-block px-2 py-0.5 rounded-full text-[10px] font-black"
+                                            class="inline-block px-2.5 py-1 rounded-full text-[10px] font-black"
                                         >
-                                            {{ p.boardingStatus === 'boarded' ? '✓ Посажен' : (p.boardingStatus === 'no_show' ? '✕ No-show' : '⏳ В ожидании') }}
+                                            {{ p.boardingStatus === 'boarded' ? '✓ Посажен' : (p.boardingStatus === 'no_show' ? '✕ No-show' : '⏳ Ожидает посадки') }}
                                         </span>
                                     </td>
 
@@ -669,18 +756,32 @@ export default {
                                     <div class="text-[11px] text-slate-500 mt-0.5">📍 {{ p.pickupCity }} → {{ p.dropOffCity }}</div>
                                 </div>
                             </div>
-                            <!-- Status Badges -->
+                            <!-- Combined Status Badges -->
                             <span 
-                                :class="{
-                                    'bg-emerald-100 text-emerald-800': p.boardingStatus === 'boarded',
-                                    'bg-rose-100 text-rose-800': p.boardingStatus === 'no_show',
-                                    'bg-amber-100 text-amber-800': p.boardingStatus === 'pending_boarding'
-                                }"
-                                class="px-2 py-0.5 rounded-full text-[10px] font-black shrink-0"
+                                v-if="p.status === 'pending_payment'"
+                                class="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 shrink-0 border border-amber-300"
                             >
-                                {{ p.boardingStatus === 'boarded' ? '✓ Сел' : (p.boardingStatus === 'no_show' ? '✕ No-show' : '⏳ Ожидает') }}
+                                ⏳ Ожидает оплаты
+                            </span>
+                            <span 
+                                v-else-if="p.status === 'cancelled'"
+                                class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 shrink-0"
+                            >
+                                ✕ Отменено
+                            </span>
+                            <span 
+                                v-else
+                                :class="{
+                                    'bg-emerald-100 text-emerald-800 font-black': p.boardingStatus === 'boarded',
+                                    'bg-rose-100 text-rose-800 font-black': p.boardingStatus === 'no_show',
+                                    'bg-sky-50 text-sky-800 font-bold border border-sky-200': p.boardingStatus === 'pending_boarding'
+                                }"
+                                class="px-2.5 py-1 rounded-full text-[10px] shrink-0"
+                            >
+                                {{ p.boardingStatus === 'boarded' ? '✓ Посажен' : (p.boardingStatus === 'no_show' ? '✕ No-show' : '⏳ Ожидает посадки') }}
                             </span>
                         </div>
+
 
                         <!-- Contacts & Quick Calls -->
                         <div v-if="p.phone" class="flex items-center gap-2 pt-1 border-t border-slate-50">

@@ -49,9 +49,11 @@ export default {
             if (!this.selectedTicketId) return [];
 
             const passengers = [];
-            const ticketBookings = this.bookings.filter(b => b.bus_ticket_id === Number(this.selectedTicketId));
+            const ticketBookings = this.bookings.filter(b => b.bus_ticket_id === Number(this.selectedTicketId) && b.status === 'confirmed');
 
             ticketBookings.forEach(b => {
+
+
                 const pData = b.passengers_data || [];
                 const bStatus = b.boarding_status || 'pending_boarding';
 

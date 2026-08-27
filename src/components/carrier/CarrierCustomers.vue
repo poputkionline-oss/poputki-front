@@ -410,7 +410,12 @@
                                     <div class="text-xs text-slate-500 font-mono mt-0.5">{{ fb.departure_date }} в {{ fb.departure_time || '08:00' }}</div>
                                 </div>
                                 <div class="text-right">
-                                    <span class="px-2.5 py-1 bg-sky-100 text-sky-700 text-[10px] font-black rounded-lg uppercase">Ожидает посадки</span>
+                                    <span 
+                                        class="px-2.5 py-1 text-[10px] font-black rounded-lg uppercase"
+                                        :class="fb.status === 'pending_payment' ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-700'"
+                                    >
+                                        {{ fb.status === 'pending_payment' ? 'Ожидает оплаты' : (fb.boarding_status === 'boarded' ? 'Посажен' : (fb.boarding_status === 'no_show' ? 'Не явился' : 'Ожидает посадки')) }}
+                                    </span>
                                 </div>
                             </div>
                         </div>
@@ -437,15 +442,17 @@
                                 <div class="flex items-center gap-3">
                                     <span 
                                         class="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase"
-                                        :class="th.boarding_status === 'no_show' ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'"
+                                        :class="th.status === 'pending_payment' ? 'bg-amber-50 text-amber-700' : (th.boarding_status === 'no_show' ? 'bg-rose-50 text-rose-600' : (th.boarding_status === 'boarded' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-600'))"
                                     >
-                                        {{ th.boarding_status === 'no_show' ? 'Не явился' : (th.status === 'confirmed' || th.status === 'paid' ? 'Совершена' : th.status) }}
+                                        {{ th.status === 'pending_payment' ? 'Ожидает оплаты' : (th.boarding_status === 'no_show' ? 'Не явился' : (th.boarding_status === 'boarded' ? 'Посажен' : (th.status === 'confirmed' ? 'Совершена' : th.status))) }}
                                     </span>
+
                                     <span class="font-black text-slate-900 text-sm font-mono">{{ th.total_price }} с.</span>
                                 </div>
                             </div>
                         </div>
                     </div>
+
                 </div>
 
                 <!-- Modal Footer -->
