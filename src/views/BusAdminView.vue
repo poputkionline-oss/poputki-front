@@ -12,7 +12,9 @@ import CarrierFinance from '../components/carrier/CarrierFinance.vue';
 import CarrierMembers from '../components/carrier/CarrierMembers.vue';
 import CarrierCustomers from '../components/carrier/CarrierCustomers.vue';
 import CarrierActivity from '../components/carrier/CarrierActivity.vue';
+import CarrierDashboard from '../components/carrier/CarrierDashboard.vue';
 import { 
+
   Chart as ChartJS, 
   Title, 
   Tooltip, 
@@ -50,8 +52,10 @@ export default {
         CarrierFinance,
         CarrierMembers,
         CarrierCustomers,
-        CarrierActivity
+        CarrierActivity,
+        CarrierDashboard
     },
+
     async mounted() {
         const savedUser = localStorage.getItem('busUser');
         const savedJwt = localStorage.getItem('carrierJwt');
@@ -59,6 +63,11 @@ export default {
             try {
                 this.user = JSON.parse(savedUser);
                 this.isAuthenticated = true;
+                const role = this.user?.memberRole || this.user?.role;
+                if (role === 'driver') this.activeTab = 'boarding';
+                else if (role === 'accountant') this.activeTab = 'finance';
+                else if (role === 'dispatcher') this.activeTab = 'tickets';
+                else this.activeTab = 'dashboard';
                 this.fetchCities();
                 await Promise.all([this.fetchStats(), this.fetchTickets()]);
             } catch (e) {
@@ -106,7 +115,7 @@ export default {
             busErrors: {},
             mobileMenuOpen: false,
             navItems: [
-                { id: 'dashboard', label: 'Дашборд' },
+                { id: 'dashboard', label: 'Обзор' },
                 { id: 'boarding', label: 'Посадка' },
                 { id: 'tickets', label: 'Мои рейсы' },
                 { id: 'create', label: 'Создать рейс' },
@@ -114,9 +123,10 @@ export default {
                 { id: 'bookings', label: 'Бронирования' },
                 { id: 'finance', label: 'Финансы' },
                 { id: 'team', label: 'Команда' },
-                { id: 'crm', label: 'CRM Пассажиров' },
+                { id: 'crm', label: 'CRM Клиентов' },
                 { id: 'activity', label: 'История' }
             ],
+
             bookingSearch: '',
             crmSearch: '',
             isEditingTicket: false,
@@ -194,7 +204,13 @@ export default {
                 const res = await api.post('/auth/bus-login', { phone: this.phone, password: this.password });
                 this.user = res.data.user;
                 this.isAuthenticated = true;
+                const role = this.user?.memberRole || this.user?.role;
+                if (role === 'driver') this.activeTab = 'boarding';
+                else if (role === 'accountant') this.activeTab = 'finance';
+                else if (role === 'dispatcher') this.activeTab = 'tickets';
+                else this.activeTab = 'dashboard';
                 localStorage.setItem('busUser', JSON.stringify(this.user));
+
                 if (res.data.token) {
                     localStorage.setItem('carrierJwt', res.data.token);
                 }
@@ -1001,7 +1017,7 @@ export default {
             const isOwner = !this.user?.memberRole || this.user?.memberRole === 'owner' || this.user?.role === 'bus_driver';
             
             return this.navItems.filter(item => {
-                if (item.id === 'team' || item.id === 'activity') {
+                if (item.id === 'dashboard' || item.id === 'team' || item.id === 'activity') {
                     return isOwner;
                 }
                 if (role === 'driver') {
@@ -1013,6 +1029,7 @@ export default {
                 return true;
             });
         }
+
     },
 watch: {
         selectedManualSeats(newVal) {
@@ -1167,71 +1184,12 @@ watch: {
                 </section>
 
                 <!-- Dashboard Section -->
-                <section v-if="activeTab === 'dashboard'" class="space-y-6 lg:space-y-10">
-                    <div class="flex justify-between items-end">
-                        <div>
-                            <h2 class="text-3xl font-bold text-slate-900">Дашборд</h2>
-                            <p class="text-slate-500 mt-2 uppercase tracking-widest font-black text-xs">Обзор вашей деятельности</p>
-                        </div>
-                    </div>
-
-                    <!-- Stats Grid -->
-                    <div v-if="loading && !stats" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 animate-pulse">
-                        <div v-for="i in 4" :key="'stat-skel-'+i" class="bg-white p-8 rounded-[32px] border border-slate-100 h-32"></div>
-                    </div>
-                    <div v-else-if="stats" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <div class="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm">
-                            <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-2">Выручка</p>
-                            <h3 class="text-3xl font-black text-slate-900">{{ stats.totalRevenue }} <span class="text-lg">с.</span></h3>
-                        </div>
-                        <div class="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm border-l-4 border-amber-500">
-                            <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-2">Всего броней</p>
-                            <h3 class="text-3xl font-black text-amber-500">{{ stats.totalBookings }}</h3>
-                        </div>
-                        <div class="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm">
-                            <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-2">Активные рейсы</p>
-                            <h3 class="text-3xl font-black text-slate-900">{{ stats.activeRides }}</h3>
-                        </div>
-                        <div class="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm border-l-4 border-emerald-500">
-                            <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-2">Сред. загрузка</p>
-                            <h3 class="text-3xl font-black text-emerald-500">{{ stats.avgFillRate }} <span class="text-lg">%</span></h3>
-                        </div>
-                    </div>
-
-                    <div v-if="stats" class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        <!-- Daily Bookings Chart -->
-                        <div class="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm">
-                            <h4 class="text-lg font-bold mb-6 text-slate-800">Динамика бронирований</h4>
-                            <div class="h-[300px]">
-                                <LineChart :data="dailyBookingsChartData" :options="chartOptions" />
-                            </div>
-                        </div>
-
-                        <!-- Routes and Distribution -->
-                        <div class="space-y-8">
-                            <div class="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm">
-                                <h4 class="text-lg font-bold mb-6 text-slate-800">Популярные маршруты</h4>
-                                <div class="space-y-4">
-                                    <div v-for="r in stats.popularRoutes" :key="r.route" class="flex justify-between items-center pb-3 border-b border-slate-50 last:border-0">
-                                        <span class="font-bold text-slate-700">{{ r.route }}</span>
-                                        <span class="bg-amber-50 text-amber-600 px-3 py-1 rounded-full text-xs font-black">{{ r.count }} рейсов</span>
-                                    </div>
-                                    <div v-if="!stats.popularRoutes || stats.popularRoutes.length === 0" class="text-center text-slate-300 py-4">Нет данных</div>
-                                </div>
-                            </div>
-
-                            <div class="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm flex items-center gap-8">
-                                <div class="h-32 w-32 shrink-0">
-                                    <PieChart :data="fillRateChartData" :options="pieOptions" />
-                                </div>
-                                <div>
-                                    <h4 class="text-lg font-bold text-slate-800 mb-1">Загрузка мест</h4>
-                                    <p class="text-sm text-slate-400">Средний показатель наполняемости ваших автобусов</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                <section v-if="activeTab === 'dashboard'" class="space-y-6">
+                    <CarrierDashboard 
+                        @navigate="activeTab = $event"
+                    />
                 </section>
+
 
                 <!-- Tickets List -->
                 <section v-if="activeTab === 'tickets'" class="space-y-6 lg:space-y-8">
