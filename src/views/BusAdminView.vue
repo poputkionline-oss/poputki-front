@@ -11,6 +11,7 @@ import CarrierTripBookings from '../components/carrier/CarrierTripBookings.vue';
 import CarrierFinance from '../components/carrier/CarrierFinance.vue';
 import CarrierMembers from '../components/carrier/CarrierMembers.vue';
 import CarrierCustomers from '../components/carrier/CarrierCustomers.vue';
+import CarrierActivity from '../components/carrier/CarrierActivity.vue';
 import { 
   Chart as ChartJS, 
   Title, 
@@ -47,7 +48,9 @@ export default {
         CarrierBoarding,
         CarrierTripBookings,
         CarrierFinance,
-        CarrierMembers
+        CarrierMembers,
+        CarrierCustomers,
+        CarrierActivity
     },
     async mounted() {
         const savedUser = localStorage.getItem('busUser');
@@ -111,7 +114,8 @@ export default {
                 { id: 'bookings', label: 'Бронирования' },
                 { id: 'finance', label: 'Финансы' },
                 { id: 'team', label: 'Команда' },
-                { id: 'crm', label: 'CRM Пассажиров' }
+                { id: 'crm', label: 'CRM Пассажиров' },
+                { id: 'activity', label: 'История' }
             ],
             bookingSearch: '',
             crmSearch: '',
@@ -997,7 +1001,7 @@ export default {
             const isOwner = !this.user?.memberRole || this.user?.memberRole === 'owner' || this.user?.role === 'bus_driver';
             
             return this.navItems.filter(item => {
-                if (item.id === 'team') {
+                if (item.id === 'team' || item.id === 'activity') {
                     return isOwner;
                 }
                 if (role === 'driver') {
@@ -1400,6 +1404,13 @@ watch: {
                     <CarrierCustomers 
                         :user="user"
                         @quick-rebook="handleQuickRebook"
+                    />
+                </section>
+
+                <!-- Activity History Section -->
+                <section v-if="activeTab === 'activity'" class="space-y-6">
+                    <CarrierActivity 
+                        :user="user"
                     />
                 </section>
                 <!-- Create Booking Section -->
