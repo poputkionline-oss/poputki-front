@@ -306,3 +306,157 @@ export async function exportPassengerManifestExcel(ticket = {}, passengers = [],
 
     return workbook;
 }
+
+/**
+ * Export CRM customer list to professional Excel spreadsheet
+ * 
+ * @param {Array} customers - Aggregated customer list
+ * @param {Object} [options] - Additional options (e.g. carrierName)
+ */
+export async function exportCrmCustomersExcel(customers = [], options = {}) {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'POPUTKI.ONLINE';
+    workbook.created = new Date();
+
+    const worksheet = workbook.addWorksheet('База клиентов', {
+        pageSetup: {
+            paperSize: 9, // A4
+            orientation: 'landscape',
+            fitToPage: true
+        }
+    });
+
+    // Column widths
+    worksheet.columns = [
+        { key: 'num', width: 6 },
+        { key: 'name', width: 28 },
+        { key: 'phone', width: 18 },
+        { key: 'document', width: 22 },
+        { key: 'citizenship', width: 16 },
+        { key: 'trips', width: 12 },
+        { key: 'confirmed', width: 14 },
+        { key: 'cancelled', width: 10 },
+        { key: 'noshow', width: 10 },
+        { key: 'value', width: 16 },
+        { key: 'last_trip', width: 24 },
+        { key: 'next_trip', width: 24 },
+        { key: 'source', width: 14 },
+        { key: 'loyalty', width: 14 }
+    ];
+
+    // Title Block
+    worksheet.mergeCells('A1:N1');
+    const titleCell = worksheet.getCell('A1');
+    titleCell.value = 'POPUTKI.ONLINE — БАЗА КЛИЕНТОВ ПЕРЕВОЗЧИКА';
+    titleCell.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FF1E293B' } };
+    titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+    worksheet.getRow(1).height = 28;
+
+    worksheet.mergeCells('A2:N2');
+    const subtitleCell = worksheet.getCell('A2');
+    const exportDate = new Date().toLocaleDateString('ru-RU');
+    subtitleCell.value = `Выгрузка сформирована: ${exportDate} | Всего клиентов в отчёте: ${customers.length}`;
+    subtitleCell.font = { name: 'Arial', size: 10, color: { argb: 'FF64748B' } };
+    subtitleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+    worksheet.getRow(2).height = 18;
+
+    // Header row
+    const headers = [
+        '№', 'ФИО Клиента', 'Телефон', 'Документ', 'Гражданство',
+        'Всего', 'Подтвержд.', 'Отмен', 'No-show', 'Сумма (с.)',
+        'Последняя поездка', 'Следующая поездка', 'Основной источник', 'Лояльность'
+    ];
+
+    const headerRow = worksheet.getRow(4);
+    headerRow.height = 26;
+    headers.forEach((h, idx) => {
+        const cell = headerRow.getCell(idx + 1);
+        cell.value = h;
+        cell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = {
+            top: { style: 'thin', color: { argb: 'FF334155' } },
+            bottom: { style: 'thin', color: { argb: 'FF334155' } },
+            left: { style: 'thin', color: { argb: 'FF334155' } },
+            right: { style: 'thin', color: { argb: 'FF334155' } }
+        };
+    });
+
+    const thinBorder = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+    };
+
+    // Data rows
+    customers.forEach((c, idx) => {
+        const rowNum = 5 + idx;
+        const row = worksheet.getRow(rowNum);
+        row.height = 22;
+
+        const docStr = c.document ? `${c.document.docType || 'Паспорт'}: ${c.document.docNumber || '—'}` : '—';
+        const lastTripStr = c.last_trip ? `${c.last_trip.date} (${c.last_trip.from_city} → ${c.last_trip.to_city})` : '—';
+        const nextTripStr = c.next_trip ? `${c.next_trip.date} (${c.next_trip.from_city} → ${c.next_trip.to_city})` : '—';
+
+        const sourceLabels = {
+            web: 'Сайт',
+            telegram: 'Telegram',
+            manual: 'Ручная бронь',
+            direct_link: 'Прямая ссылка',
+            partner_link: 'Партнер'
+        };
+
+        const loyaltyLabels = {
+            new: 'Новый',
+            repeat: 'Повторный',
+            regular: 'Постоянный'
+        };
+
+        const rowValues = [
+            { col: 1, val: idx + 1, align: 'center' },
+            { col: 2, val: c.name || '—', align: 'left', bold: true },
+            { col: 3, val: c.phone || '—', align: 'center' },
+            { col: 4, val: docStr, align: 'left' },
+            { col: 5, val: c.document?.citizenship || '—', align: 'center' },
+            { col: 6, val: c.total_trips || 0, align: 'center' },
+            { col: 7, val: c.confirmed_trips || 0, align: 'center' },
+            { col: 8, val: c.cancelled_count || 0, align: 'center' },
+            { col: 9, val: c.no_show_count || 0, align: 'center' },
+            { col: 10, val: c.total_booking_value || 0, align: 'right', bold: true },
+            { col: 11, val: lastTripStr, align: 'left' },
+            { col: 12, val: nextTripStr, align: 'left' },
+            { col: 13, val: sourceLabels[c.primary_source] || c.primary_source || '—', align: 'center' },
+            { col: 14, val: loyaltyLabels[c.loyalty_badge] || c.loyalty_badge || '—', align: 'center' }
+        ];
+
+        rowValues.forEach(rv => {
+            const cell = row.getCell(rv.col);
+            cell.value = rv.val;
+            cell.font = { name: 'Arial', size: 9, bold: !!rv.bold, color: { argb: 'FF0F172A' } };
+            cell.alignment = { horizontal: rv.align, vertical: 'middle' };
+            cell.border = thinBorder;
+            if (idx % 2 === 1) {
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+            }
+        });
+    });
+
+    const filename = `CRM_База_Клиентов_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => { window.URL.revokeObjectURL(url); }, 1000);
+    }
+
+    return workbook;
+}

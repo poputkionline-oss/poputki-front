@@ -10,6 +10,7 @@ import CarrierBoarding from '../components/carrier/CarrierBoarding.vue';
 import CarrierTripBookings from '../components/carrier/CarrierTripBookings.vue';
 import CarrierFinance from '../components/carrier/CarrierFinance.vue';
 import CarrierMembers from '../components/carrier/CarrierMembers.vue';
+import CarrierCustomers from '../components/carrier/CarrierCustomers.vue';
 import { 
   Chart as ChartJS, 
   Title, 
@@ -504,6 +505,25 @@ export default {
             } finally {
                 this.loading = false;
             }
+        },
+        handleQuickRebook(customerData) {
+            if (!customerData) return;
+            this.isEditingBooking = false;
+            this.editingBookingId = null;
+            this.bookingForm = {
+                bus_ticket_id: '',
+                passenger_count: (customerData.passengers_data && customerData.passengers_data.length) ? customerData.passengers_data.length : 1,
+                passengers_data: (customerData.passengers_data && customerData.passengers_data.length) ? customerData.passengers_data : [
+                    { lastName: '', firstName: customerData.passenger_name || '', middleName: '', gender: 'male', docType: 'Загранпаспорт', docNumber: '', birthDate: '', citizenship: 'Таджикистан', phone: customerData.phone || '', seatNumber: '' }
+                ],
+                pickup_city: '',
+                drop_off_city: '',
+                phone: customerData.phone || '',
+                passenger_name: customerData.passenger_name || ''
+            };
+            this.selectedManualSeats = [];
+            this.showManualForm = true;
+            this.activeTab = 'create-booking';
         },
         initBooking(ticketId) {
             this.bookingForm.bus_ticket_id = ticketId;
@@ -1376,54 +1396,12 @@ watch: {
                     />
                 </section>
                 <!-- CRM section -->
-                <section v-if="activeTab === 'crm'" class="space-y-6 lg:space-y-8">
-                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                         <div>
-                            <h2 class="text-2xl lg:text-3xl font-bold text-slate-900">CRM Пассажиров</h2>
-                            <p class="text-xs text-slate-400 mt-1 uppercase tracking-widest font-black">База всех ваших пассажиров</p>
-                         </div>
-                         <div class="relative w-full sm:w-80">
-                            <input v-model="crmSearch" placeholder="Поиск по имени или телефону..." class="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-amber-500 text-slate-900 shadow-sm" />
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                        </div>
-                     </div>
-                     <div class="bg-white rounded-[32px] border border-slate-100 overflow-hidden shadow-sm">
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left border-collapse min-w-[1000px]">
-                                <thead>
-                                    <tr class="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-500 border-b border-slate-100">
-                                        <th class="px-6 py-5">#</th>
-                                        <th class="px-6 py-5">ФИО ПАССАЖИРА</th>
-                                        <th class="px-6 py-5">ТЕЛЕФОН</th>
-                                        <th class="px-6 py-5">ПОЛ</th>
-                                        <th class="px-6 py-5">ДАТА РОЖДЕНИЯ</th>
-                                        <th class="px-6 py-5">ДОКУМЕНТ</th>
-                                        <th class="px-6 py-5">ГРАЖДАНСТВО</th>
-                                        <th class="px-6 py-5">ПОСЛЕДНИЙ МАРШРУТ</th>
-                                        <th class="px-6 py-5">ДАТА БРОНИ</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-slate-50">
-                                    <tr v-for="(p, idx) in crmPassengers" :key="idx" class="hover:bg-slate-50/20 transition-colors">
-                                        <td class="px-6 py-4 text-slate-400 font-bold text-[11px]">{{ idx + 1 }}</td>
-                                        <td class="px-6 py-4 font-bold text-slate-900 text-sm whitespace-nowrap">{{ p.lastName }} {{ p.firstName }} {{ p.middleName }}</td>
-                                        <td class="px-6 py-4 text-[11px] font-bold text-slate-900">{{ p.contactPhone || '—' }}</td>
-                                        <td class="px-6 py-4 text-xs text-slate-600 uppercase font-bold">{{ p.gender === 'male' ? 'Муж' : (p.gender === 'female' ? 'Жен' : '—') }}</td>
-                                        <td class="px-6 py-4 text-xs text-slate-600 font-medium font-mono">{{ p.birthDate || '—' }}</td>
-                                        <td class="px-6 py-4 text-[11px] text-slate-600">{{ p.docType }} {{ p.docNumber }}</td>
-                                        <td class="px-6 py-4 text-xs text-slate-600">{{ p.citizenship || '—' }}</td>
-                                        <td class="px-6 py-4 text-[10px] text-slate-500 font-bold uppercase">{{ p.route }}</td>
-                                        <td class="px-6 py-4 text-[10px] text-slate-500 font-mono">{{ p.createdAt ? new Date(p.createdAt).toLocaleDateString('ru-RU') : '—' }}</td>
-                                    </tr>
-                                    <tr v-if="crmPassengers.length === 0">
-                                        <td colspan="9" class="px-6 py-8 text-center text-slate-400">Пассажиры не найдены</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                     </div>
+                <section v-if="activeTab === 'crm'" class="space-y-6">
+                    <CarrierCustomers 
+                        :user="user"
+                        @quick-rebook="handleQuickRebook"
+                    />
                 </section>
-
                 <!-- Create Booking Section -->
                 <section v-if="activeTab === 'create-booking'" class="space-y-6 lg:space-y-8">
                     <div class="flex justify-between items-center">
