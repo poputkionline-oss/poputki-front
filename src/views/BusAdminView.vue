@@ -1014,7 +1014,7 @@ export default {
         },
         visibleNavItems() {
             const role = this.user?.memberRole || this.user?.role;
-            const isOwner = !this.user?.memberRole || this.user?.memberRole === 'owner' || this.user?.role === 'bus_driver';
+            const isOwner = role === 'owner';
             
             return this.navItems.filter(item => {
                 if (item.id === 'dashboard' || item.id === 'team' || item.id === 'activity') {
@@ -1029,6 +1029,7 @@ export default {
                 return true;
             });
         }
+
 
     },
 watch: {
