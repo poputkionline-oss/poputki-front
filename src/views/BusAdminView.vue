@@ -143,6 +143,7 @@ export default {
             selectedBookingRideId: '',
             selectedManualSeats: [],
             showManualForm: false,
+            prefilledCrmCustomer: null,
             photoLoading: false,
             ocrLoadingIndex: -1,
             uploadPreset: 'poputki',
@@ -530,11 +531,30 @@ export default {
             if (!customerData) return;
             this.isEditingBooking = false;
             this.editingBookingId = null;
+
+            // Store deep copy of prefilled CRM customer
+            this.prefilledCrmCustomer = JSON.parse(JSON.stringify(customerData));
+
+            const p0 = (customerData.passengers_data && customerData.passengers_data.length > 0)
+                ? customerData.passengers_data[0]
+                : {};
+
             this.bookingForm = {
                 bus_ticket_id: '',
-                passenger_count: (customerData.passengers_data && customerData.passengers_data.length) ? customerData.passengers_data.length : 1,
-                passengers_data: (customerData.passengers_data && customerData.passengers_data.length) ? customerData.passengers_data : [
-                    { lastName: '', firstName: customerData.passenger_name || '', middleName: '', gender: 'male', docType: 'Загранпаспорт', docNumber: '', birthDate: '', citizenship: 'Таджикистан', phone: customerData.phone || '', seatNumber: '' }
+                passenger_count: 1,
+                passengers_data: [
+                    {
+                        lastName: p0.lastName || '',
+                        firstName: p0.firstName || customerData.passenger_name || '',
+                        middleName: p0.middleName || '',
+                        gender: p0.gender || 'male',
+                        docType: p0.docType || 'Загранпаспорт',
+                        docNumber: p0.docNumber || '',
+                        birthDate: p0.birthDate || '',
+                        citizenship: p0.citizenship || 'Таджикистан',
+                        phone: p0.phone || customerData.phone || '',
+                        seatNumber: ''
+                    }
                 ],
                 pickup_city: '',
                 drop_off_city: '',
@@ -544,6 +564,24 @@ export default {
             this.selectedManualSeats = [];
             this.showManualForm = true;
             this.activeTab = 'create-booking';
+        },
+        resetManualBookingForm() {
+            this.prefilledCrmCustomer = null;
+            this.selectedManualSeats = [];
+            this.showManualForm = false;
+            this.isEditingBooking = false;
+            this.editingBookingId = null;
+            this.bookingForm = {
+                bus_ticket_id: '',
+                passenger_count: 1,
+                passengers_data: [
+                    { lastName: '', firstName: '', middleName: '', gender: 'male', docType: 'Загранпаспорт', docNumber: '', birthDate: '', citizenship: 'Таджикистан', phone: '', seatNumber: '' }
+                ],
+                pickup_city: '',
+                drop_off_city: '',
+                phone: '',
+                passenger_name: ''
+            };
         },
         initBooking(ticketId) {
             this.bookingForm.bus_ticket_id = ticketId;
@@ -788,12 +826,17 @@ export default {
 
                 alert('Бронь успешно создана!');
                 // Reset
+                this.prefilledCrmCustomer = null;
+                this.selectedManualSeats = [];
+                this.showManualForm = false;
                 this.bookingForm = {
                     bus_ticket_id: '',
                     passenger_count: 1,
                     passengers_data: [{ lastName: '', firstName: '', middleName: '', gender: 'male', docType: 'Загранпаспорт', docNumber: '', birthDate: '', citizenship: 'Таджикистан', phone: '', seatNumber: '' }],
                     pickup_city: '',
-                    drop_off_city: ''
+                    drop_off_city: '',
+                    phone: '',
+                    passenger_name: ''
                 };
                 this.activeTab = 'bookings';
                 this.fetchBookings();
@@ -1036,28 +1079,128 @@ watch: {
         selectedManualSeats(newVal) {
             const currentPassengers = [...this.bookingForm.passengers_data];
             const newPassengers = [];
-            
-            newVal.forEach(seatNum => {
-                const existing = currentPassengers.find(p => String(p.seatNumber) === String(seatNum));
-                if (existing) {
-                    newPassengers.push(existing);
-                } else {
+            const usedIndices = new Set();
+
+            const crmData = this.prefilledCrmCustomer ? (this.prefilledCrmCustomer.passengers_data?.[0] || {}) : null;
+
+            newVal.forEach((seatNum, idx) => {
+                // 1. Check if an existing passenger already holds this seat number
+                let matchIdx = currentPassengers.findIndex((p, pIdx) => !usedIndices.has(pIdx) && String(p.seatNumber) === String(seatNum));
+
+                // 2. If not found by seatNumber and unseated passenger exists, match unseated passenger
+                if (matchIdx === -1) {
+                    matchIdx = currentPassengers.findIndex((p, pIdx) => !usedIndices.has(pIdx) && (!p.seatNumber || p.seatNumber === ''));
+                }
+
+                if (matchIdx !== -1) {
+                    usedIndices.add(matchIdx);
                     newPassengers.push({
-                        lastName: '', firstName: '', middleName: '', gender: 'male', docType: 'Загранпаспорт', docNumber: '', birthDate: '', citizenship: 'Таджикистан', phone: '', seatNumber: seatNum
+                        ...currentPassengers[matchIdx],
+                        seatNumber: seatNum
+                    });
+                } else if (idx === 0 && crmData) {
+                    // Fallback: ensure first seat retains CRM customer
+                    newPassengers.push({
+                        lastName: crmData.lastName || '',
+                        firstName: crmData.firstName || this.prefilledCrmCustomer.passenger_name || '',
+                        middleName: crmData.middleName || '',
+                        gender: crmData.gender || 'male',
+                        docType: crmData.docType || 'Загранпаспорт',
+                        docNumber: crmData.docNumber || '',
+                        birthDate: crmData.birthDate || '',
+                        citizenship: crmData.citizenship || 'Таджикистан',
+                        phone: crmData.phone || this.prefilledCrmCustomer.phone || '',
+                        seatNumber: seatNum
+                    });
+                } else {
+                    // Additional seat creates a clean empty passenger template
+                    newPassengers.push({
+                        lastName: '', firstName: '', middleName: '', gender: 'male',
+                        docType: 'Загранпаспорт', docNumber: '', birthDate: '',
+                        citizenship: 'Таджикистан', phone: '', seatNumber: seatNum
                     });
                 }
             });
-            
+
+            // Reassign CRM customer data to the first remaining seat if their previous seat was deselected
+            if (crmData && newPassengers.length > 0) {
+                const hasCrmCustomerSeated = newPassengers.some(p => 
+                    (crmData.docNumber && p.docNumber === crmData.docNumber) ||
+                    (crmData.phone && p.phone === crmData.phone) ||
+                    (crmData.firstName && p.firstName === crmData.firstName)
+                );
+                if (!hasCrmCustomerSeated) {
+                    newPassengers[0] = {
+                        lastName: crmData.lastName || '',
+                        firstName: crmData.firstName || this.prefilledCrmCustomer.passenger_name || '',
+                        middleName: crmData.middleName || '',
+                        gender: crmData.gender || 'male',
+                        docType: crmData.docType || 'Загранпаспорт',
+                        docNumber: crmData.docNumber || '',
+                        birthDate: crmData.birthDate || '',
+                        citizenship: crmData.citizenship || 'Таджикистан',
+                        phone: crmData.phone || this.prefilledCrmCustomer.phone || '',
+                        seatNumber: newPassengers[0].seatNumber
+                    };
+                }
+            }
+
+            // If all seats deselected:
+            if (newPassengers.length === 0) {
+                if (crmData) {
+                    newPassengers.push({
+                        lastName: crmData.lastName || '',
+                        firstName: crmData.firstName || this.prefilledCrmCustomer.passenger_name || '',
+                        middleName: crmData.middleName || '',
+                        gender: crmData.gender || 'male',
+                        docType: crmData.docType || 'Загранпаспорт',
+                        docNumber: crmData.docNumber || '',
+                        birthDate: crmData.birthDate || '',
+                        citizenship: crmData.citizenship || 'Таджикистан',
+                        phone: crmData.phone || this.prefilledCrmCustomer.phone || '',
+                        seatNumber: ''
+                    });
+                } else {
+                    newPassengers.push({
+                        lastName: '', firstName: '', middleName: '', gender: 'male',
+                        docType: 'Загранпаспорт', docNumber: '', birthDate: '',
+                        citizenship: 'Таджикистан', phone: '', seatNumber: ''
+                    });
+                }
+            }
+
             this.bookingForm.passengers_data = newPassengers;
             this.bookingForm.passenger_count = newPassengers.length;
         },
         'bookingForm.bus_ticket_id'() {
             this.selectedManualSeats = [];
             this.showManualForm = false;
+            if (this.prefilledCrmCustomer) {
+                const crmData = this.prefilledCrmCustomer.passengers_data?.[0] || {};
+                this.bookingForm.passengers_data = [
+                    {
+                        lastName: crmData.lastName || '',
+                        firstName: crmData.firstName || this.prefilledCrmCustomer.passenger_name || '',
+                        middleName: crmData.middleName || '',
+                        gender: crmData.gender || 'male',
+                        docType: crmData.docType || 'Загранпаспорт',
+                        docNumber: crmData.docNumber || '',
+                        birthDate: crmData.birthDate || '',
+                        citizenship: crmData.citizenship || 'Таджикистан',
+                        phone: crmData.phone || this.prefilledCrmCustomer.phone || '',
+                        seatNumber: ''
+                    }
+                ];
+                this.bookingForm.passenger_count = 1;
+                this.bookingForm.phone = this.prefilledCrmCustomer.phone || '';
+                this.bookingForm.passenger_name = this.prefilledCrmCustomer.passenger_name || '';
+            }
         },
         activeTab(newTab) {
             if (newTab === 'create-booking' && !this.isEditingBooking) {
-                this.showManualForm = false;
+                if (this.selectedManualSeats.length === 0 && !this.prefilledCrmCustomer) {
+                    this.showManualForm = false;
+                }
             }
             this.fetchData();
         }
@@ -1376,7 +1519,19 @@ watch: {
                 <section v-if="activeTab === 'create-booking'" class="space-y-6 lg:space-y-8">
                     <div class="flex justify-between items-center">
                         <h2 class="text-2xl lg:text-3xl font-bold text-slate-900">{{ isEditingBooking ? 'Редактировать бронирование' : 'Создать бронирование вручную' }}</h2>
-                        <button v-if="isEditingBooking" @click="isEditingBooking = false; activeTab = 'bookings'" class="text-xs font-bold text-slate-400 hover:text-slate-600">Отмена</button>
+                        <div class="flex items-center gap-2">
+                            <button v-if="isEditingBooking" @click="isEditingBooking = false; activeTab = 'bookings'" class="text-xs font-bold text-slate-400 hover:text-slate-600">Отмена</button>
+                            <button v-else-if="prefilledCrmCustomer || bookingForm.bus_ticket_id || selectedManualSeats.length > 0" @click="resetManualBookingForm" class="text-xs font-bold text-slate-400 hover:text-rose-600 transition-colors">Очистить форму</button>
+                        </div>
+                    </div>
+
+                    <!-- CRM Prefill Banner -->
+                    <div v-if="prefilledCrmCustomer" class="p-4 bg-amber-50/80 border border-amber-200/80 rounded-2xl flex items-center justify-between text-xs text-amber-900 font-bold shadow-sm">
+                        <div class="flex items-center gap-2">
+                            <span class="text-base">👤</span>
+                            <span>Быстрое бронирование для клиента: <strong class="text-slate-900">{{ prefilledCrmCustomer.passenger_name || prefilledCrmCustomer.phone }}</strong> (данные подставлены из CRM)</span>
+                        </div>
+                        <button @click="resetManualBookingForm" class="text-amber-700 hover:text-amber-900 text-xs underline font-bold">Сбросить</button>
                     </div>
 
                     <div class="bg-white rounded-[32px] border border-slate-100 p-6 lg:p-8 shadow-sm space-y-6">

@@ -152,7 +152,12 @@
                         <tr v-for="c in customers" :key="c.customer_key" class="hover:bg-slate-50/40 transition-colors">
                             <!-- Name & Loyalty Badge -->
                             <td class="px-6 py-4">
-                                <div class="font-bold text-slate-900 text-sm">{{ c.name }}</div>
+                                <div class="font-bold text-slate-900 text-sm flex items-center gap-2">
+                                    <span>{{ customerDisplayName(c) }}</span>
+                                </div>
+                                <div v-if="customerSubTitle(c)" class="text-[11px] text-slate-400 font-medium mt-0.5">
+                                    {{ customerSubTitle(c) }}
+                                </div>
                                 <div class="mt-1 flex items-center gap-1.5">
                                     <span 
                                         class="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider"
@@ -236,9 +241,18 @@
                                         Карточка
                                     </button>
                                     <button 
+                                        v-if="!isAnonymousCustomer(c)"
                                         @click="quickRebook(c)"
                                         class="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-600 text-xs font-bold rounded-xl transition-all border border-amber-200 flex items-center gap-1"
                                         title="Быстро создать бронь"
+                                    >
+                                        <span>+</span> Бронь
+                                    </button>
+                                    <button 
+                                        v-else
+                                        disabled
+                                        class="px-3 py-1.5 bg-slate-50 text-slate-300 text-xs font-bold rounded-xl border border-slate-100 cursor-not-allowed"
+                                        title="Недоступно: нет данных пассажира"
                                     >
                                         <span>+</span> Бронь
                                     </button>
@@ -259,7 +273,8 @@
             >
                 <div class="flex justify-between items-start">
                     <div>
-                        <h4 class="font-bold text-slate-900 text-base">{{ c.name }}</h4>
+                        <h4 class="font-bold text-slate-900 text-base">{{ customerDisplayName(c) }}</h4>
+                        <p v-if="customerSubTitle(c)" class="text-[11px] text-slate-400 font-medium">{{ customerSubTitle(c) }}</p>
                         <p class="text-xs text-slate-500 font-mono mt-0.5">{{ c.phone }}</p>
                     </div>
                     <span 
@@ -299,7 +314,18 @@
                         <button @click="openCustomerDetails(c.customer_key)" class="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold">
                             Карточка
                         </button>
-                        <button @click="quickRebook(c)" class="px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-500/20">
+                        <button 
+                            v-if="!isAnonymousCustomer(c)" 
+                            @click="quickRebook(c)" 
+                            class="px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-500/20"
+                        >
+                            + Бронь
+                        </button>
+                        <button 
+                            v-else 
+                            disabled 
+                            class="px-4 py-2 bg-slate-100 text-slate-300 rounded-xl text-xs font-bold cursor-not-allowed"
+                        >
                             + Бронь
                         </button>
                     </div>
@@ -591,22 +617,87 @@ export default {
             }
         },
 
-        quickRebook(customer) {
-            if (!customer) return;
+        isAnonymousCustomer(c) {
+            if (!c) return false;
+            const hasName = c.name && c.name !== 'Не указано' && c.name.trim() !== '';
+            const hasPhone = c.phone && c.phone !== '—' && c.phone.trim() !== '';
+            const hasDoc = Boolean(c.document?.docNumber || c.has_document);
+            return !hasName && !hasPhone && !hasDoc;
+        },
+
+        isPhoneOnlyCustomer(c) {
+            if (!c) return false;
+            const hasName = c.name && c.name !== 'Не указано' && c.name.trim() !== '';
+            const hasPhone = c.phone && c.phone !== '—' && c.phone.trim() !== '';
+            return !hasName && hasPhone;
+        },
+
+        customerDisplayName(c) {
+            if (!c) return '—';
+            if (this.isAnonymousCustomer(c)) {
+                return 'Блокировка мест / Анонимная бронь';
+            }
+            if (this.isPhoneOnlyCustomer(c)) {
+                return `Клиент ${c.phone}`;
+            }
+            return c.name || 'Не указано';
+        },
+
+        customerSubTitle(c) {
+            if (!c) return null;
+            if (this.isAnonymousCustomer(c)) {
+                return 'Нет данных пассажира';
+            }
+            if (this.isPhoneOnlyCustomer(c)) {
+                return 'ФИО не указано';
+            }
+            return null;
+        },
+
+        async quickRebook(customer) {
+            if (!customer || this.isAnonymousCustomer(customer)) return;
+
+            let profile = customer;
+            // If document details are missing but customer_key is available, fetch details from backend
+            if (customer.customer_key && (!customer.document || !customer.document.docNumber)) {
+                this.loading = true;
+                try {
+                    const encodedKey = encodeURIComponent(customer.customer_key);
+                    const res = await api.get(`/bus-admin/customers/${encodedKey}`);
+                    if (res && res.data && res.data.profile) {
+                        profile = {
+                            ...customer,
+                            name: res.data.profile.name || customer.name,
+                            phone: res.data.profile.phone || customer.phone,
+                            document: res.data.profile.document || customer.document
+                        };
+                    }
+                } catch (err) {
+                    console.warn('[CarrierCustomers] Could not fetch details for quick rebook, using basic data:', err);
+                } finally {
+                    this.loading = false;
+                }
+            }
+
+            const doc = profile.document || {};
+            const rawName = (profile.name && profile.name !== 'Не указано') ? profile.name.trim() : '';
+            const nameParts = rawName ? rawName.split(/\s+/) : [];
+
             const rebookPayload = {
-                passenger_name: customer.name !== 'Не указано' ? customer.name : '',
-                phone: customer.phone !== '—' ? customer.phone : '',
+                passenger_name: rawName,
+                phone: (profile.phone && profile.phone !== '—') ? profile.phone : '',
                 passengers_data: [
                     {
-                        lastName: customer.document?.lastName || customer.name.split(' ')[0] || '',
-                        firstName: customer.document?.firstName || customer.name.split(' ')[1] || '',
-                        middleName: customer.document?.middleName || customer.name.split(' ')[2] || '',
-                        docType: customer.document?.docType || 'Загранпаспорт',
-                        docNumber: customer.document?.docNumber || '',
-                        citizenship: customer.document?.citizenship || 'Таджикистан',
-                        birthDate: customer.document?.birthDate || '',
-                        gender: customer.document?.gender || 'male',
-                        phone: customer.phone !== '—' ? customer.phone : ''
+                        lastName: doc.lastName || nameParts[0] || '',
+                        firstName: doc.firstName || nameParts[1] || rawName || '',
+                        middleName: doc.middleName || nameParts.slice(2).join(' ') || '',
+                        docType: doc.docType || 'Загранпаспорт',
+                        docNumber: doc.docNumber || '',
+                        citizenship: doc.citizenship || 'Таджикистан',
+                        birthDate: doc.birthDate || '',
+                        gender: doc.gender || 'male',
+                        phone: (profile.phone && profile.phone !== '—') ? profile.phone : '',
+                        seatNumber: ''
                     }
                 ]
             };
@@ -614,13 +705,14 @@ export default {
         },
 
         quickRebookFromModal() {
-            if (!this.selectedCustomerDetails) return;
+            if (!this.selectedCustomerDetails || !this.selectedCustomerDetails.profile) return;
             const c = this.selectedCustomerDetails.profile;
             this.showModal = false;
             this.quickRebook({
                 name: c.name,
                 phone: c.phone,
-                document: c.document
+                document: c.document,
+                customer_key: this.selectedCustomerDetails.customer_key
             });
         },
 
