@@ -360,153 +360,194 @@
         </div>
 
         <!-- Customer Details Modal -->
-        <div v-if="showModal && selectedCustomerDetails" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+        <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn" @click.self="closeCustomerModal">
             <div class="bg-white rounded-[32px] max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden relative">
-                <!-- Modal Header -->
-                <div class="p-6 md:p-8 border-b border-slate-100 flex justify-between items-start bg-slate-50/50">
-                    <div>
-                        <div class="flex items-center gap-2.5">
-                            <h3 class="text-xl md:text-2xl font-black text-slate-900">{{ selectedCustomerDetails.profile.name }}</h3>
-                            <span 
-                                class="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider"
-                                :class="loyaltyBadgeClass(selectedCustomerDetails.profile.loyalty_badge)"
-                            >
-                                {{ loyaltyBadgeLabel(selectedCustomerDetails.profile.loyalty_badge) }}
-                            </span>
-                        </div>
-                        <p class="text-xs text-slate-500 font-mono mt-1 flex items-center gap-2">
-                            <span>{{ selectedCustomerDetails.profile.phone }}</span>
-                            <span v-if="selectedCustomerDetails.profile.phone !== '—'" class="text-slate-300">•</span>
-                            <span v-if="selectedCustomerDetails.profile.phone !== '—'" class="text-amber-600 font-sans font-bold">{{ formatSource(selectedCustomerDetails.profile.primary_source) }}</span>
-                        </p>
-                    </div>
-                    <button @click="showModal = false" class="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors">
-                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
+
+                <!-- Loading State in Modal -->
+                <div v-if="modalLoading" class="p-12 text-center space-y-4">
+                    <div class="w-12 h-12 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin mx-auto"></div>
+                    <p class="text-sm font-bold text-slate-700">Загрузка карточки клиента...</p>
                 </div>
 
-                <!-- Modal Body (Scrollable) -->
-                <div class="p-6 md:p-8 overflow-y-auto space-y-6 flex-1">
-                    <!-- Warning Banner -->
-                    <div v-if="selectedCustomerDetails.profile.has_no_show_warning" class="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2.5">
-                        <span>⚠️</span>
-                        <span>Внимание: пассажир не явился на посадку {{ selectedCustomerDetails.statistics.no_show_count }} раз(а).</span>
+                <!-- Error State in Modal -->
+                <div v-else-if="modalError" class="p-8 text-center space-y-4">
+                    <div class="w-14 h-14 bg-rose-50 text-rose-500 rounded-2xl flex items-center justify-center mx-auto text-2xl">⚠️</div>
+                    <h4 class="text-base font-bold text-slate-900">Не удалось загрузить карточку клиента</h4>
+                    <p class="text-xs text-rose-500 max-w-md mx-auto">{{ modalError }}</p>
+                    <div class="flex items-center justify-center gap-3 pt-2">
+                        <button @click="retryCustomerDetails" class="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-500/20">
+                            🔄 Повторить
+                        </button>
+                        <button @click="closeCustomerModal" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all">
+                            Закрыть
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Content State in Modal -->
+                <template v-else-if="selectedCustomerDetails">
+                    <!-- Modal Header -->
+                    <div class="p-6 md:p-8 border-b border-slate-100 flex justify-between items-start bg-slate-50/50">
+                        <div>
+                            <div class="flex items-center gap-2.5">
+                                <h3 class="text-xl md:text-2xl font-black text-slate-900">{{ customerDisplayName(selectedCustomerDetails.profile) }}</h3>
+                                <span
+                                    class="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider"
+                                    :class="loyaltyBadgeClass(selectedCustomerDetails.profile.loyalty_badge)"
+                                >
+                                    {{ loyaltyBadgeLabel(selectedCustomerDetails.profile.loyalty_badge) }}
+                                </span>
+                            </div>
+                            <p v-if="customerSubTitle(selectedCustomerDetails.profile)" class="text-xs text-slate-400 font-medium mt-0.5">
+                                {{ customerSubTitle(selectedCustomerDetails.profile) }}
+                            </p>
+                            <p class="text-xs text-slate-500 font-mono mt-1 flex items-center gap-2">
+                                <span>{{ selectedCustomerDetails.profile.phone }}</span>
+                                <span v-if="selectedCustomerDetails.profile.phone && selectedCustomerDetails.profile.phone !== '—'" class="text-slate-300">•</span>
+                                <span v-if="selectedCustomerDetails.profile.phone && selectedCustomerDetails.profile.phone !== '—'" class="text-amber-600 font-sans font-bold">{{ formatSource(selectedCustomerDetails.profile.primary_source) }}</span>
+                            </p>
+                        </div>
+                        <button @click="closeCustomerModal" class="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors">
+                            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
                     </div>
 
-                    <!-- Statistics Grid -->
-                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center">
-                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Всего поездок</span>
-                            <span class="text-xl font-black text-slate-900">{{ selectedCustomerDetails.statistics.total_trips }}</span>
+                    <!-- Modal Body (Scrollable) -->
+                    <div class="p-6 md:p-8 overflow-y-auto space-y-6 flex-1">
+                        <!-- Warning Banner -->
+                        <div v-if="selectedCustomerDetails.profile.has_no_show_warning" class="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2.5">
+                            <span>⚠️</span>
+                            <span>Внимание: пассажир не явился на посадку {{ selectedCustomerDetails.statistics.no_show_count || 0 }} раз(а).</span>
                         </div>
-                        <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center">
-                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Подтверждено</span>
-                            <span class="text-xl font-black text-emerald-600">{{ selectedCustomerDetails.statistics.confirmed_trips }}</span>
-                        </div>
-                        <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center">
-                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Отменено</span>
-                            <span class="text-xl font-black text-rose-500">{{ selectedCustomerDetails.statistics.cancelled_count }}</span>
-                        </div>
-                        <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center">
-                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Выручка</span>
-                            <span class="text-xl font-black text-slate-900">{{ formatMoney(selectedCustomerDetails.statistics.total_booking_value) }} <span class="text-xs">с.</span></span>
-                        </div>
-                    </div>
 
-                    <!-- Document Details -->
-                    <div v-if="selectedCustomerDetails.profile.document" class="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-2">
-                        <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest">Паспортные данные</h4>
-                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-1">
-                            <div>
-                                <span class="text-[10px] text-slate-400 block">Тип документа</span>
-                                <span class="font-bold text-slate-800">{{ selectedCustomerDetails.profile.document.docType || 'Паспорт' }}</span>
+                        <!-- Statistics Grid -->
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center">
+                                <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Всего поездок</span>
+                                <span class="text-xl font-black text-slate-900">{{ selectedCustomerDetails.statistics.total_trips }}</span>
                             </div>
-                            <div>
-                                <span class="text-[10px] text-slate-400 block">Номер документа</span>
-                                <span class="font-mono font-bold text-slate-900">{{ selectedCustomerDetails.profile.document.docNumber }}</span>
+                            <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center">
+                                <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Подтверждено</span>
+                                <span class="text-xl font-black text-emerald-600">{{ selectedCustomerDetails.statistics.confirmed_trips }}</span>
                             </div>
-                            <div>
-                                <span class="text-[10px] text-slate-400 block">Гражданство</span>
-                                <span class="font-bold text-slate-800">{{ selectedCustomerDetails.profile.document.citizenship || '—' }}</span>
+                            <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center">
+                                <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Отменено</span>
+                                <span class="text-xl font-black text-rose-500">{{ selectedCustomerDetails.statistics.cancelled_count }}</span>
                             </div>
-                            <div>
-                                <span class="text-[10px] text-slate-400 block">Дата рождения</span>
-                                <span class="font-mono text-slate-800">{{ selectedCustomerDetails.profile.document.birthDate || '—' }}</span>
+                            <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center">
+                                <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Выручка</span>
+                                <span class="text-xl font-black text-slate-900">{{ formatMoney(selectedCustomerDetails.statistics.total_booking_value) }} <span class="text-xs">с.</span></span>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Upcoming Bookings -->
-                    <div v-if="selectedCustomerDetails.future_bookings && selectedCustomerDetails.future_bookings.length > 0" class="space-y-3">
-                        <h4 class="text-xs font-bold text-sky-600 uppercase tracking-widest">Предстоящие поездки</h4>
-                        <div class="space-y-2">
-                            <div 
-                                v-for="fb in selectedCustomerDetails.future_bookings" 
-                                :key="'fut-' + fb.booking_id"
-                                class="p-4 rounded-2xl bg-sky-50/50 border border-sky-100 flex justify-between items-center"
-                            >
+                        <!-- Document Details -->
+                        <div v-if="selectedCustomerDetails.profile.document && selectedCustomerDetails.profile.document.docNumber" class="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-2">
+                            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest">Паспортные данные</h4>
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-1">
                                 <div>
-                                    <div class="font-bold text-slate-900 text-sm">{{ fb.from_city }} → {{ fb.to_city }}</div>
-                                    <div class="text-xs text-slate-500 font-mono mt-0.5">{{ fb.departure_date }} в {{ fb.departure_time || '08:00' }}</div>
+                                    <span class="text-[10px] text-slate-400 block">Тип документа</span>
+                                    <span class="font-bold text-slate-800">{{ selectedCustomerDetails.profile.document.docType || 'Паспорт' }}</span>
                                 </div>
-                                <div class="text-right">
-                                    <span 
-                                        class="px-2.5 py-1 text-[10px] font-black rounded-lg uppercase"
-                                        :class="fb.status === 'pending_payment' ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-700'"
-                                    >
-                                        {{ fb.status === 'pending_payment' ? 'Ожидает оплаты' : (fb.boarding_status === 'boarded' ? 'Посажен' : (fb.boarding_status === 'no_show' ? 'Не явился' : 'Ожидает посадки')) }}
-                                    </span>
+                                <div>
+                                    <span class="text-[10px] text-slate-400 block">Номер документа</span>
+                                    <span class="font-mono font-bold text-slate-900">{{ selectedCustomerDetails.profile.document.docNumber }}</span>
+                                </div>
+                                <div>
+                                    <span class="text-[10px] text-slate-400 block">Гражданство</span>
+                                    <span class="font-bold text-slate-800">{{ selectedCustomerDetails.profile.document.citizenship || '—' }}</span>
+                                </div>
+                                <div>
+                                    <span class="text-[10px] text-slate-400 block">Дата рождения</span>
+                                    <span class="font-mono text-slate-800">{{ selectedCustomerDetails.profile.document.birthDate || '—' }}</span>
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Trip History -->
-                    <div class="space-y-3">
-                        <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest">История поездок</h4>
-                        <div v-if="selectedCustomerDetails.trip_history.length === 0" class="text-slate-400 text-xs text-center py-4">
-                            Нет завершенных поездок
-                        </div>
-                        <div v-else class="space-y-2">
-                            <div 
-                                v-for="th in selectedCustomerDetails.trip_history" 
-                                :key="'hist-' + th.booking_id"
-                                class="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm flex flex-col sm:flex-row justify-between sm:items-center gap-2"
-                            >
-                                <div>
-                                    <div class="font-bold text-slate-900 text-sm">{{ th.from_city }} → {{ th.to_city }}</div>
-                                    <div class="text-xs text-slate-400 font-mono mt-0.5">
-                                        {{ th.departure_date || '—' }} • Места: {{ (th.seat_numbers || []).join(', ') || '—' }}
+                        <!-- Upcoming Bookings -->
+                        <div v-if="selectedCustomerDetails.future_bookings && selectedCustomerDetails.future_bookings.length > 0" class="space-y-3">
+                            <h4 class="text-xs font-bold text-sky-600 uppercase tracking-widest">Предстоящие поездки</h4>
+                            <div class="space-y-2">
+                                <div
+                                    v-for="fb in selectedCustomerDetails.future_bookings"
+                                    :key="'fut-' + (fb.booking_id || fb.id)"
+                                    class="p-4 rounded-2xl bg-sky-50/50 border border-sky-100 flex justify-between items-center"
+                                >
+                                    <div>
+                                        <div class="font-bold text-slate-900 text-sm">{{ fb.from_city || '—' }} → {{ fb.to_city || '—' }}</div>
+                                        <div class="text-xs text-slate-500 font-mono mt-0.5">{{ fb.departure_date || '—' }} в {{ fb.departure_time || '08:00' }}</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <span
+                                            class="px-2.5 py-1 text-[10px] font-black rounded-lg uppercase"
+                                            :class="fb.status === 'pending_payment' ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-700'"
+                                        >
+                                            {{ fb.status === 'pending_payment' ? 'Ожидает оплаты' : (fb.boarding_status === 'boarded' ? 'Посажен' : (fb.boarding_status === 'no_show' ? 'Не явился' : 'Ожидает посадки')) }}
+                                        </span>
                                     </div>
                                 </div>
-                                <div class="flex items-center gap-3">
-                                    <span 
-                                        class="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase"
-                                        :class="th.status === 'pending_payment' ? 'bg-amber-50 text-amber-700' : (th.boarding_status === 'no_show' ? 'bg-rose-50 text-rose-600' : (th.boarding_status === 'boarded' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-600'))"
-                                    >
-                                        {{ th.status === 'pending_payment' ? 'Ожидает оплаты' : (th.boarding_status === 'no_show' ? 'Не явился' : (th.boarding_status === 'boarded' ? 'Посажен' : (th.status === 'confirmed' ? 'Совершена' : th.status))) }}
-                                    </span>
+                            </div>
+                        </div>
 
-                                    <span class="font-black text-slate-900 text-sm font-mono">{{ th.total_price }} с.</span>
+                        <!-- Trip History -->
+                        <div class="space-y-3">
+                            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest">История поездок</h4>
+                            <div v-if="!selectedCustomerDetails.trip_history || selectedCustomerDetails.trip_history.length === 0" class="text-slate-400 text-xs text-center py-4">
+                                Нет завершенных поездок
+                            </div>
+                            <div v-else class="space-y-2">
+                                <div
+                                    v-for="th in selectedCustomerDetails.trip_history"
+                                    :key="'hist-' + (th.booking_id || th.id)"
+                                    class="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm flex flex-col sm:flex-row justify-between sm:items-center gap-2"
+                                >
+                                    <div>
+                                        <div class="font-bold text-slate-900 text-sm">{{ th.from_city || '—' }} → {{ th.to_city || '—' }}</div>
+                                        <div class="text-xs text-slate-400 font-mono mt-0.5">
+                                            {{ th.departure_date || '—' }} • Места: {{ formatSeatNumbers(th.seat_numbers) }}
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <span
+                                            class="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase"
+                                            :class="th.status === 'pending_payment' ? 'bg-amber-50 text-amber-700' : (th.boarding_status === 'no_show' ? 'bg-rose-50 text-rose-600' : (th.boarding_status === 'boarded' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-600'))"
+                                        >
+                                            {{ th.status === 'pending_payment' ? 'Ожидает оплаты' : (th.boarding_status === 'no_show' ? 'Не явился' : (th.boarding_status === 'boarded' ? 'Посажен' : (th.status === 'confirmed' ? 'Совершена' : (th.status || '—')))) }}
+                                        </span>
+
+                                        <span class="font-black text-slate-900 text-sm font-mono">{{ formatMoney(th.total_price) }} с.</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
+
                     </div>
 
-                </div>
-
-                <!-- Modal Footer -->
-                <div class="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                    <button @click="showModal = false" class="px-6 py-3 bg-slate-200 text-slate-700 rounded-2xl text-xs font-bold hover:bg-slate-300 transition-all">
-                        Закрыть
-                    </button>
-                    <button @click="quickRebookFromModal" class="px-6 py-3 bg-amber-500 text-slate-900 rounded-2xl text-xs font-bold shadow-lg shadow-amber-500/20 hover:bg-amber-600 hover:text-white transition-all flex items-center gap-2">
-                        <span>+</span>
-                        <span>Создать новую бронь для клиента</span>
-                    </button>
-                </div>
+                    <!-- Modal Footer -->
+                    <div class="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                        <button @click="closeCustomerModal" class="px-6 py-3 bg-slate-200 text-slate-700 rounded-2xl text-xs font-bold hover:bg-slate-300 transition-all">
+                            Закрыть
+                        </button>
+                        <button
+                            v-if="!isAnonymousCustomer(selectedCustomerDetails.profile)"
+                            @click="quickRebookFromModal"
+                            class="px-6 py-3 bg-amber-500 text-slate-900 rounded-2xl text-xs font-bold shadow-lg shadow-amber-500/20 hover:bg-amber-600 hover:text-white transition-all flex items-center gap-2"
+                        >
+                            <span>+</span>
+                            <span>Создать новую бронь для клиента</span>
+                        </button>
+                        <button
+                            v-else
+                            disabled
+                            class="px-6 py-3 bg-slate-100 text-slate-400 rounded-2xl text-xs font-bold cursor-not-allowed"
+                            title="Недоступно: нет данных пассажира"
+                        >
+                            <span>+</span>
+                            <span>Создать новую бронь для клиента</span>
+                        </button>
+                    </div>
+                </template>
             </div>
         </div>
     </div>
@@ -548,6 +589,9 @@ export default {
             selectedSource: 'all',
             selectedLoyalty: 'all',
             showModal: false,
+            modalLoading: false,
+            modalError: null,
+            currentCustomerKey: null,
             selectedCustomerDetails: null
         };
     },
@@ -601,20 +645,95 @@ export default {
 
         async openCustomerDetails(customerKey) {
             if (!customerKey) return;
-            this.loading = true;
+            this.currentCustomerKey = customerKey;
+            this.showModal = true;
+            this.modalLoading = true;
+            this.modalError = null;
+            this.selectedCustomerDetails = null;
+
             try {
                 const encodedKey = encodeURIComponent(customerKey);
                 const res = await api.get(`/bus-admin/customers/${encodedKey}`);
                 if (res && res.data) {
-                    this.selectedCustomerDetails = res.data;
-                    this.showModal = true;
+                    this.selectedCustomerDetails = this.normalizeCustomerDetails(res.data);
+                } else {
+                    throw new Error('Данные клиента не получены');
                 }
             } catch (err) {
                 console.error('[CarrierCustomers] Error fetching details:', err);
-                alert('Не удалось загрузить карточку клиента');
+                this.modalError = err.response?.data?.error || err.message || 'Не удалось загрузить карточку клиента';
             } finally {
-                this.loading = false;
+                this.modalLoading = false;
             }
+        },
+
+        retryCustomerDetails() {
+            if (this.currentCustomerKey) {
+                this.openCustomerDetails(this.currentCustomerKey);
+            }
+        },
+
+        closeCustomerModal() {
+            this.showModal = false;
+            this.modalLoading = false;
+            this.modalError = null;
+            this.selectedCustomerDetails = null;
+            this.currentCustomerKey = null;
+        },
+
+        normalizeCustomerDetails(data) {
+            if (!data) return null;
+            const profile = (data.profile && typeof data.profile === 'object') ? data.profile : {};
+            const stats = (data.statistics && typeof data.statistics === 'object') ? data.statistics : {};
+            const history = Array.isArray(data.trip_history) ? data.trip_history : [];
+            const future = Array.isArray(data.future_bookings) ? data.future_bookings : [];
+
+            return {
+                customer_key: data.customer_key || '',
+                profile: {
+                    name: profile.name || 'Не указано',
+                    phone: profile.phone || '—',
+                    document: (profile.document && typeof profile.document === 'object') ? profile.document : null,
+                    first_seen_at: profile.first_seen_at || '',
+                    last_seen_at: profile.last_seen_at || '',
+                    primary_source: profile.primary_source || 'web',
+                    loyalty_badge: profile.loyalty_badge || 'new',
+                    has_no_show_warning: Boolean(profile.has_no_show_warning || (stats.no_show_count > 0))
+                },
+                statistics: {
+                    total_trips: Number(stats.total_trips) || 0,
+                    confirmed_trips: Number(stats.confirmed_trips) || 0,
+                    future_trips: Number(stats.future_trips) || 0,
+                    cancelled_count: Number(stats.cancelled_count) || 0,
+                    no_show_count: Number(stats.no_show_count) || 0,
+                    total_booking_value: Number(stats.total_booking_value) || 0
+                },
+                trip_history: history,
+                future_bookings: future
+            };
+        },
+
+        formatSeatNumbers(seats) {
+            if (!seats) return '—';
+            if (Array.isArray(seats)) {
+                const valid = seats.filter(s => s !== null && s !== undefined && String(s).trim() !== '');
+                return valid.length > 0 ? valid.join(', ') : '—';
+            }
+            if (typeof seats === 'string') {
+                const trimmed = seats.trim();
+                if (trimmed.startsWith('[')) {
+                    try {
+                        const parsed = JSON.parse(trimmed);
+                        if (Array.isArray(parsed)) {
+                            const valid = parsed.filter(s => s !== null && s !== undefined && String(s).trim() !== '');
+                            return valid.length > 0 ? valid.join(', ') : '—';
+                        }
+                    } catch (e) {}
+                }
+                return trimmed || '—';
+            }
+            if (typeof seats === 'number') return String(seats);
+            return '—';
         },
 
         isAnonymousCustomer(c) {
@@ -707,7 +826,7 @@ export default {
         quickRebookFromModal() {
             if (!this.selectedCustomerDetails || !this.selectedCustomerDetails.profile) return;
             const c = this.selectedCustomerDetails.profile;
-            this.showModal = false;
+            this.closeCustomerModal();
             this.quickRebook({
                 name: c.name,
                 phone: c.phone,
