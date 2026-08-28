@@ -13,6 +13,7 @@ import CarrierMembers from '../components/carrier/CarrierMembers.vue';
 import CarrierCustomers from '../components/carrier/CarrierCustomers.vue';
 import CarrierActivity from '../components/carrier/CarrierActivity.vue';
 import CarrierDashboard from '../components/carrier/CarrierDashboard.vue';
+import CarrierFleet from '../components/carrier/CarrierFleet.vue';
 import { 
 
   Chart as ChartJS, 
@@ -53,7 +54,8 @@ export default {
         CarrierMembers,
         CarrierCustomers,
         CarrierActivity,
-        CarrierDashboard
+        CarrierDashboard,
+        CarrierFleet
     },
 
     async mounted() {
@@ -118,6 +120,7 @@ export default {
                 { id: 'dashboard', label: 'Обзор' },
                 { id: 'boarding', label: 'Посадка' },
                 { id: 'tickets', label: 'Мои рейсы' },
+                { id: 'fleet', label: 'Мой автопарк' },
                 { id: 'create', label: 'Создать рейс' },
                 { id: 'create-booking', label: 'Создать бронь' },
                 { id: 'bookings', label: 'Бронирования' },
@@ -1067,7 +1070,7 @@ export default {
                     return ['boarding', 'tickets'].includes(item.id);
                 }
                 if (role === 'accountant') {
-                    return ['finance'].includes(item.id);
+                    return ['finance', 'fleet'].includes(item.id);
                 }
                 return true;
             });
@@ -1492,6 +1495,11 @@ watch: {
                         :user="user"
                         @select-trip-bookings="(ticketId) => { activeTab = 'bookings'; }"
                     />
+                </section>
+
+                <!-- Fleet Management Section -->
+                <section v-if="activeTab === 'fleet'" class="space-y-6">
+                    <CarrierFleet :user="user" />
                 </section>
 
                 <!-- Team Management Section -->
