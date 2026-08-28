@@ -112,8 +112,14 @@ export default {
                 passenger_comments: '',
                 intermediate_stops: [],
                 photos: [],
+                bus_id: null,
                 accept_terms: true
             },
+            fleetBuses: [],
+            fleetLoading: false,
+            selectedFleetBusId: '',
+            showScheduleConflictModal: false,
+            scheduleConflicts: [],
             busErrors: {},
             mobileMenuOpen: false,
             navItems: [
@@ -242,8 +248,21 @@ export default {
                 if (this.activeTab === 'boarding' && this.tickets.length === 0) {
                     promises.push(this.fetchTickets());
                 }
+            } else if (this.activeTab === 'create' || this.activeTab === 'fleet') {
+                promises.push(this.fetchFleetBuses());
             }
             await Promise.all(promises);
+        },
+        async fetchFleetBuses() {
+            this.fleetLoading = true;
+            try {
+                const res = await api.get('/bus-admin/buses');
+                this.fleetBuses = Array.isArray(res.data) ? res.data : [];
+            } catch (e) {
+                console.error('[BusAdminView] Error loading fleet buses:', e);
+            } finally {
+                this.fleetLoading = false;
+            }
         },
         async fetchStats() {
             this.loading = true;
@@ -325,7 +344,7 @@ export default {
         },
         validateBusForm() {
             const e = {};
-            if (!this.busForm.transport_company.trim()) e.transport_company = 'Укажите компанию';
+            if (!this.busForm.transport_company.trim()) e.transport_company = 'Укажите название компании';
             if (!this.busForm.from_city) e.from_city = 'Укажите город отправления';
             if (!this.busForm.from_address.trim()) e.from_address = 'Укажите место отправления';
             if (!this.busForm.to_city) e.to_city = 'Укажите город прибытия';
@@ -335,18 +354,23 @@ export default {
             if (!this.busForm.arrival_time) e.arrival_time = 'Укажите время прибытия';
             if (!this.busForm.duration_hours || this.busForm.duration_hours <= 0) e.duration_hours = 'Укажите длительность (в часах)';
             if (!this.busForm.price || this.busForm.price <= 0) e.price = 'Укажите цену';
-            if (this.busForm.bus_type === 'double') {
-                if (!this.busForm.floor1_seats || this.busForm.floor1_seats < 1) e.floor1_seats = 'Укажите кол-во мест 1 этажа';
-                if (!this.busForm.floor2_seats || this.busForm.floor2_seats < 1) e.floor2_seats = 'Укажите кол-во мест 2 этажа';
-            } else {
-                if (!this.busForm.total_seats || this.busForm.total_seats < 1) e.total_seats = 'Укажите количество мест';
+            
+            // Only validate manual capacity if NOT using selectedFleetBus
+            if (!this.selectedFleetBus) {
+                if (this.busForm.bus_type === 'double') {
+                    if (!this.busForm.floor1_seats || this.busForm.floor1_seats < 1) e.floor1_seats = 'Укажите кол-во мест 1 этажа';
+                    if (!this.busForm.floor2_seats || this.busForm.floor2_seats < 1) e.floor2_seats = 'Укажите кол-во мест 2 этажа';
+                } else {
+                    if (!this.busForm.total_seats || this.busForm.total_seats < 1) e.total_seats = 'Укажите количество мест';
+                }
             }
+
             if (!this.busForm.accept_terms) e.accept_terms = 'Необходимо согласиться с условиями использования и публичной офертой';
             
             this.busErrors = e;
             return Object.keys(e).length === 0;
         },
-        async submitBusTicket() {
+        async submitBusTicket(allowConflict = false) {
             if (!this.validateBusForm()) {
                 alert('Пожалуйста, заполните все обязательные поля');
                 return;
@@ -361,7 +385,15 @@ export default {
                     premium_price: this.busForm.premium_price ? Number(this.busForm.premium_price) : null,
                     photos: this.busForm.photos
                 };
-                if (this.busForm.bus_type === 'double') {
+
+                if (this.selectedFleetBus) {
+                    submitData.bus_id = this.selectedFleetBus.id;
+                    submitData.bus_type = this.selectedFleetBus.bus_type;
+                    submitData.total_seats = this.selectedFleetBus.total_seats;
+                    submitData.floor1_seats = this.selectedFleetBus.floor1_seats;
+                    submitData.floor2_seats = this.selectedFleetBus.floor2_seats;
+                    submitData.photos = this.selectedFleetBus.photos;
+                } else if (this.busForm.bus_type === 'double') {
                     submitData.floor1_seats = Number(this.busForm.floor1_seats);
                     submitData.floor2_seats = Number(this.busForm.floor2_seats);
                     submitData.total_seats = submitData.floor1_seats + submitData.floor2_seats;
@@ -371,27 +403,40 @@ export default {
                     submitData.floor2_seats = null;
                     submitData.premium_price = null;
                 }
+
+                if (allowConflict) {
+                    submitData.allow_bus_conflict = true;
+                }
+
                 await api.post('/bus-tickets', submitData);
                 alert('Рейс успешно создан!');
-                
+                this.showScheduleConflictModal = false;
+                this.scheduleConflicts = [];
+
                 // Reset form
+                this.selectedFleetBusId = '';
                 this.busForm = {
                     transport_company: '', from_city: '', from_address: '',
                     to_city: '', to_address: '', departure_date: '',
                     departure_time: '', arrival_date: '', arrival_time: '',
-                    arrival_time: '',
                     duration_hours: '',
                     price: '',
                     floor1_seats: 20, floor2_seats: 56,
                     bus_type: 'single', passenger_comments: '',
                     intermediate_stops: [],
                     photos: [],
+                    bus_id: null,
                     accept_terms: true
                 };
-                
+
                 this.activeTab = 'tickets';
             } catch (e) {
-                alert(e.response?.data?.error || 'Ошибка при создании');
+                if (e.response?.status === 409 && e.response?.data?.error === 'BUS_SCHEDULE_CONFLICT') {
+                    this.scheduleConflicts = e.response.data.conflicts || [];
+                    this.showScheduleConflictModal = true;
+                } else {
+                    alert(e.response?.data?.error || 'Ошибка при создании рейса');
+                }
             } finally {
                 this.loading = false;
             }
@@ -1074,6 +1119,13 @@ export default {
                 }
                 return true;
             });
+        },
+        activeFleetBuses() {
+            return (this.fleetBuses || []).filter(b => b && b.status === 'active');
+        },
+        selectedFleetBus() {
+            if (!this.selectedFleetBusId) return null;
+            return this.activeFleetBuses.find(b => b.id === Number(this.selectedFleetBusId)) || null;
         }
 
 
@@ -1197,6 +1249,19 @@ watch: {
                 this.bookingForm.passenger_count = 1;
                 this.bookingForm.phone = this.prefilledCrmCustomer.phone || '';
                 this.bookingForm.passenger_name = this.prefilledCrmCustomer.passenger_name || '';
+            }
+        },
+        selectedFleetBusId(newId) {
+            const bus = this.selectedFleetBus;
+            if (bus) {
+                this.busForm.bus_id = bus.id;
+                this.busForm.bus_type = bus.bus_type || 'single';
+                this.busForm.total_seats = bus.total_seats || 53;
+                this.busForm.floor1_seats = bus.floor1_seats || 20;
+                this.busForm.floor2_seats = bus.floor2_seats || 56;
+                this.busForm.photos = Array.isArray(bus.photos) ? JSON.parse(JSON.stringify(bus.photos)) : [];
+            } else {
+                this.busForm.bus_id = null;
             }
         },
         activeTab(newTab) {
@@ -1675,11 +1740,115 @@ watch: {
                     </div>
                 </section>
 
-                <!-- Create Bus Section (Copied from Admin View) -->
+                <!-- Create Bus Section -->
                 <section v-if="activeTab === 'create'" class="space-y-6 lg:space-y-8 text-slate-900">
                     <h2 class="text-2xl lg:text-3xl font-bold text-slate-900">{{ isEditingTicket ? 'Редактировать рейс' : 'Опубликовать новый рейс' }}</h2>
                     
                     <div class="bg-white rounded-[32px] border border-slate-100 p-6 lg:p-8 shadow-sm space-y-8">
+                        <!-- Fleet Bus Selector Section -->
+                        <div v-if="!isEditingTicket" class="space-y-4 pb-6 border-b border-slate-100">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <div>
+                                    <label class="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                        <span>🚌 Автобус из автопарка</span>
+                                    </label>
+                                    <p class="text-xs text-slate-500 mt-0.5">
+                                        Характеристики, схема мест и фотографии подставятся автоматически
+                                    </p>
+                                </div>
+                                <button 
+                                    type="button"
+                                    @click="activeTab = 'fleet'"
+                                    class="text-xs font-bold text-amber-600 hover:text-amber-700 inline-flex items-center gap-1 self-start sm:self-auto cursor-pointer"
+                                >
+                                    <span>Мой автопарк →</span>
+                                </button>
+                            </div>
+
+                            <!-- If No Active Buses in Fleet -->
+                            <div v-if="!fleetLoading && activeFleetBuses.length === 0" class="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                                <div class="flex items-center gap-2.5">
+                                    <span class="text-lg">ℹ️</span>
+                                    <span>В вашем автопарке пока нет активных автобусов. Вы можете создать рейс вручную или сначала добавить автобус в автопарк.</span>
+                                </div>
+                                <button 
+                                    type="button" 
+                                    @click="activeTab = 'fleet'" 
+                                    class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold whitespace-nowrap transition-all shadow-sm cursor-pointer"
+                                >
+                                    + Добавить автобус
+                                </button>
+                            </div>
+
+                            <!-- If Fleet Has Active Buses -->
+                            <div v-else class="space-y-4">
+                                <div class="relative">
+                                    <select 
+                                        v-model="selectedFleetBusId" 
+                                        class="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-slate-900 font-bold text-sm outline-none focus:border-amber-500 appearance-none cursor-pointer shadow-inner"
+                                    >
+                                        <option value="">-- Выберите автобус из автопарка (или заполните вручную) --</option>
+                                        <option v-for="b in activeFleetBuses" :key="'fleet-bus-'+b.id" :value="b.id">
+                                            {{ b.brand }} {{ b.model }} ({{ b.name }}) • {{ b.license_plate }} • {{ b.total_seats }} мест • {{ b.bus_type === 'double' ? '2 этажа' : '1 этаж' }}
+                                        </option>
+                                    </select>
+                                    <div class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">
+                                        ▼
+                                    </div>
+                                </div>
+
+                                <!-- Selected Bus Summary Card -->
+                                <div v-if="selectedFleetBus" class="p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                    <div class="flex items-center gap-4">
+                                        <!-- Thumbnail -->
+                                        <div class="w-16 h-16 rounded-2xl overflow-hidden bg-slate-100 border border-amber-200 shrink-0 shadow-sm">
+                                            <img 
+                                                v-if="selectedFleetBus.photos && selectedFleetBus.photos.length > 0" 
+                                                :src="selectedFleetBus.photos.find(p=>p.is_main)?.url || selectedFleetBus.photos[0].url" 
+                                                class="w-full h-full object-cover" 
+                                            />
+                                            <div v-else class="w-full h-full flex items-center justify-center text-2xl">
+                                                🚌
+                                            </div>
+                                        </div>
+
+                                        <!-- Info -->
+                                        <div class="space-y-1">
+                                            <div class="flex items-center gap-2">
+                                                <span class="font-black text-slate-900 text-sm sm:text-base">{{ selectedFleetBus.brand }} {{ selectedFleetBus.model }}</span>
+                                                <span class="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white">
+                                                    {{ selectedFleetBus.name }}
+                                                </span>
+                                            </div>
+                                            <div class="flex flex-wrap items-center gap-2 text-xs text-slate-600 font-medium">
+                                                <span class="font-mono font-bold bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-900">{{ selectedFleetBus.license_plate }}</span>
+                                                <span>•</span>
+                                                <span class="font-bold text-slate-800">
+                                                    {{ selectedFleetBus.total_seats }} мест
+                                                    <template v-if="selectedFleetBus.bus_type === 'double' && selectedFleetBus.floor1_seats">
+                                                        ({{ selectedFleetBus.floor1_seats }} + {{ selectedFleetBus.floor2_seats }})
+                                                    </template>
+                                                </span>
+                                                <span>•</span>
+                                                <span>{{ selectedFleetBus.bus_type === 'double' ? '2 этажа' : '1 этаж' }}</span>
+                                                <span v-if="selectedFleetBus.year_built">• {{ selectedFleetBus.year_built }} г.</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-center gap-2 self-end sm:self-auto">
+                                        <button 
+                                            type="button" 
+                                            @click="selectedFleetBusId = ''" 
+                                            class="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 font-bold text-xs transition-all shadow-sm cursor-pointer"
+                                        >
+                                            Сбросить выбор
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             <!-- Company -->
                             <div class="space-y-2">
@@ -1764,27 +1933,34 @@ watch: {
                                 <p v-if="busErrors.price" class="text-[10px] text-red-500 mt-1 ml-1 font-bold">{{ busErrors.price }}</p>
                             </div>
 
-                             <!-- Bus Type Selection -->
-                             <div class="space-y-2 flex flex-col">
-                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 text-slate-400">Конфигурация автобуса</label>
+                            <!-- Duration (when selectedFleetBus is active) -->
+                            <div v-if="selectedFleetBus" class="space-y-2">
+                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Длительность (ч.)</label>
+                                <input v-model="busForm.duration_hours" type="number" step="0.5" placeholder="Напр. 48" class="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-slate-900 outline-none focus:border-amber-400" :class="{'border-red-500': busErrors.duration_hours}" />
+                                <p v-if="busErrors.duration_hours" class="text-[9px] text-red-500 ml-1">{{ busErrors.duration_hours }}</p>
+                            </div>
+
+                            <!-- Bus Type Selection (Manual mode only) -->
+                            <div v-if="!selectedFleetBus" class="space-y-2 flex flex-col">
+                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 text-slate-400">Конфигурация автобуса (вручную)</label>
                                 <div class="flex bg-slate-50 p-1.5 rounded-2xl border border-slate-200 shadow-inner">
                                     <button @click="busForm.bus_type = 'single'; busForm.total_seats = 53"
                                         :class="busForm.bus_type === 'single' ? 'bg-amber-500 text-white shadow-lg' : 'text-slate-400'"
-                                        class="flex-1 py-3 rounded-xl font-bold text-xs transition-all tracking-tighter uppercase whitespace-nowrap px-2"
+                                        class="flex-1 py-3 rounded-xl font-bold text-xs transition-all tracking-tighter uppercase whitespace-nowrap px-2 cursor-pointer"
                                     >
                                         Обычный (53)
                                     </button>
                                     <button @click="busForm.bus_type = 'double'; busForm.floor1_seats = 20; busForm.floor2_seats = 56; busForm.total_seats = 76"
                                         :class="busForm.bus_type === 'double' ? 'bg-amber-500 text-white shadow-lg' : 'text-slate-400'"
-                                        class="flex-1 py-3 rounded-xl font-bold text-xs transition-all tracking-tighter uppercase whitespace-nowrap px-2"
+                                        class="flex-1 py-3 rounded-xl font-bold text-xs transition-all tracking-tighter uppercase whitespace-nowrap px-2 cursor-pointer"
                                     >
                                         Двухэтажный (76)
                                     </button>
                                 </div>
                             </div>
 
-                            <!-- Total Seats & Duration (single-floor) -->
-                             <div v-if="busForm.bus_type === 'single'" class="grid grid-cols-2 gap-4">
+                            <!-- Total Seats & Duration (manual single-floor) -->
+                            <div v-if="!selectedFleetBus && busForm.bus_type === 'single'" class="grid grid-cols-2 gap-4">
                                 <div class="space-y-2">
                                     <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Мест всего</label>
                                     <input v-model="busForm.total_seats" type="number" class="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-slate-900 outline-none" />
@@ -1794,10 +1970,10 @@ watch: {
                                     <input v-model="busForm.duration_hours" type="number" step="0.5" class="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-slate-900 outline-none" :class="{'border-red-500': busErrors.duration_hours}" />
                                     <p v-if="busErrors.duration_hours" class="text-[9px] text-red-500 ml-1">{{ busErrors.duration_hours }}</p>
                                 </div>
-                             </div>
+                            </div>
 
-                             <!-- Per-floor Seats & Duration (double-decker) -->
-                             <div v-if="busForm.bus_type === 'double'" class="space-y-4">
+                            <!-- Per-floor Seats & Duration (manual double-decker) -->
+                            <div v-if="!selectedFleetBus && busForm.bus_type === 'double'" class="space-y-4">
                                 <div class="grid grid-cols-3 gap-4">
                                     <div class="space-y-2">
                                         <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">1 Этаж (мест)</label>
@@ -1817,14 +1993,36 @@ watch: {
                                     <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Всего мест: </span>
                                     <span class="text-slate-900 font-bold ml-1">{{ Number(busForm.floor1_seats) + Number(busForm.floor2_seats) }}</span>
                                 </div>
-                             </div>
+                            </div>
 
-                             <!-- Premium Price -->
-                             <div v-if="busForm.bus_type === 'double'" class="space-y-2">
+                            <!-- Premium Price (for double decker) -->
+                            <div v-if="(selectedFleetBus && selectedFleetBus.bus_type === 'double') || (!selectedFleetBus && busForm.bus_type === 'double')" class="space-y-2">
                                 <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">★ Цена за Премиум-место (с.)</label>
                                 <input v-model="busForm.premium_price" type="number" placeholder="0 = нет премиума" 
                                     class="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-slate-900 font-bold text-xl outline-none focus:border-amber-500 transition-all shadow-inner" />
-                             </div>
+                            </div>
+                        </div>
+
+                        <!-- Live Seat Layout Scheme -->
+                        <div class="space-y-3 pt-4 border-t border-slate-50">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-sm font-bold text-slate-700 flex items-center gap-2">
+                                    <span>💺 Предпросмотр схемы мест</span>
+                                </h3>
+                                <span class="text-xs font-bold text-slate-500">
+                                    {{ selectedFleetBus ? selectedFleetBus.total_seats : busForm.total_seats }} мест
+                                </span>
+                            </div>
+                            <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100 max-w-sm mx-auto shadow-inner">
+                                <BusSeatSelector 
+                                    :bus-type="selectedFleetBus ? selectedFleetBus.bus_type : busForm.bus_type"
+                                    :total-seats="Number(selectedFleetBus ? selectedFleetBus.total_seats : busForm.total_seats) || 53"
+                                    :floor1-seats="Number(selectedFleetBus ? selectedFleetBus.floor1_seats : busForm.floor1_seats) || 20"
+                                    :floor2-seats="Number(selectedFleetBus ? selectedFleetBus.floor2_seats : busForm.floor2_seats) || 56"
+                                    :model-value="[]"
+                                    :max-selectable="0"
+                                />
+                            </div>
                         </div>
 
                         <!-- Intermediate Stops -->
@@ -1977,6 +2175,37 @@ watch: {
                 <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
             </svg>
             <span>{{ shareToastMessage }}</span>
+        </div>
+        <!-- Bus Schedule Conflict Modal -->
+        <div v-if="showScheduleConflictModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+            <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-center">
+                <div class="w-16 h-16 rounded-2xl bg-amber-100 text-amber-600 mx-auto flex items-center justify-center text-3xl">
+                    ⚠️
+                </div>
+                <div>
+                    <h3 class="text-lg font-bold text-slate-900">Этот автобус уже назначен на другой рейс</h3>
+                    <p class="text-xs text-slate-500 mt-1">
+                        Обнаружено пересечение расписания в указанный интервал времени:
+                    </p>
+                    <div class="mt-3 p-3 bg-amber-50 rounded-2xl border border-amber-200 text-left space-y-2 text-xs">
+                        <div v-for="c in scheduleConflicts" :key="c.ticket_id" class="text-amber-900">
+                            <div class="font-bold">{{ c.from_city }} → {{ c.to_city }}</div>
+                            <div class="text-[11px] text-amber-800">
+                                Отправление: {{ c.departure_date }} {{ c.departure_time ? c.departure_time.substring(0, 5) : '' }}
+                                <span v-if="c.arrival_date"> | Прибытие: {{ c.arrival_date }} {{ c.arrival_time ? c.arrival_time.substring(0, 5) : '' }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex gap-2 pt-2">
+                    <button @click="showScheduleConflictModal = false" class="flex-1 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer">
+                        Отмена
+                    </button>
+                    <button @click="submitBusTicket(true)" class="flex-1 py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer">
+                        Все равно создать
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 </template>
