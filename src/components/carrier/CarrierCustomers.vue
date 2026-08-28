@@ -101,11 +101,27 @@
         </div>
 
         <!-- Loading Skeleton -->
-        <div v-if="loading && customers.length === 0" class="bg-white rounded-3xl border border-slate-100 p-8 shadow-sm space-y-4 animate-pulse">
+        <div v-if="loading && customers.length === 0 && !loadError" class="bg-white rounded-3xl border border-slate-100 p-8 shadow-sm space-y-4 animate-pulse">
             <div v-for="i in 5" :key="i" class="h-12 bg-slate-50 rounded-xl"></div>
         </div>
 
-        <!-- Empty State -->
+        <!-- Error State (Do not mask as 0 customers) -->
+        <div v-else-if="loadError" class="bg-white rounded-3xl border border-rose-100 p-12 text-center shadow-sm">
+            <div class="w-16 h-16 bg-rose-50 text-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-4 text-2xl">
+                ⚠️
+            </div>
+            <h4 class="text-base font-bold text-slate-800 mb-1">Не удалось загрузить базу клиентов</h4>
+            <p class="text-xs text-rose-500 max-w-md mx-auto mb-6">{{ loadError }}</p>
+            <button 
+                @click="fetchCustomers(pagination.page || 1)" 
+                class="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold text-xs shadow-md shadow-amber-500/20 transition-all inline-flex items-center gap-1.5"
+            >
+                <span>🔄</span>
+                <span>Повторить</span>
+            </button>
+        </div>
+
+        <!-- Empty State (Only shown when successful empty response) -->
         <div v-else-if="!loading && customers.length === 0" class="bg-white rounded-3xl border border-slate-100 p-12 text-center shadow-sm">
             <div class="w-16 h-16 bg-slate-50 text-slate-300 rounded-2xl flex items-center justify-center mx-auto mb-4">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -486,6 +502,7 @@ export default {
     data() {
         return {
             loading: false,
+            loadError: null,
             exportLoading: false,
             customers: [],
             pagination: {
@@ -514,6 +531,7 @@ export default {
     methods: {
         async fetchCustomers(page = 1) {
             this.loading = true;
+            this.loadError = null;
             try {
                 const params = new URLSearchParams();
                 params.append('page', page);
@@ -529,7 +547,7 @@ export default {
                     params.append('loyalty', this.selectedLoyalty);
                 }
 
-                const res = await api.get(`/api/bus-admin/customers?${params.toString()}`);
+                const res = await api.get(`/bus-admin/customers?${params.toString()}`);
                 if (res && res.data) {
                     this.customers = res.data.customers || [];
                     this.pagination = res.data.pagination || this.pagination;
@@ -537,6 +555,7 @@ export default {
                 }
             } catch (err) {
                 console.error('[CarrierCustomers] Error loading CRM customers:', err);
+                this.loadError = err.response?.data?.error || 'Не удалось загрузить базу клиентов';
             } finally {
                 this.loading = false;
             }
@@ -559,7 +578,7 @@ export default {
             this.loading = true;
             try {
                 const encodedKey = encodeURIComponent(customerKey);
-                const res = await api.get(`/api/bus-admin/customers/${encodedKey}`);
+                const res = await api.get(`/bus-admin/customers/${encodedKey}`);
                 if (res && res.data) {
                     this.selectedCustomerDetails = res.data;
                     this.showModal = true;
@@ -609,7 +628,7 @@ export default {
             this.exportLoading = true;
             try {
                 // Fetch full unpaginated list for export
-                const res = await api.get('/api/bus-admin/customers?limit=1000');
+                const res = await api.get('/bus-admin/customers?limit=1000');
                 const list = (res && res.data && res.data.customers) ? res.data.customers : this.customers;
                 await exportCrmCustomersExcel(list);
             } catch (err) {
