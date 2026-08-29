@@ -140,6 +140,7 @@ export default {
             crmSearch: '',
             isEditingTicket: false,
             editingTicketId: null,
+            editingOriginalBusId: null,
             bookingForm: {
                 bus_ticket_id: '',
                 passenger_count: 1,
@@ -451,17 +452,33 @@ export default {
         editTicket(ticket) {
             this.isEditingTicket = true;
             this.editingTicketId = ticket.id;
+            this.editingOriginalBusId = ticket.bus_id || null;
+            this.selectedFleetBusId = ticket.bus_id ? String(ticket.bus_id) : '';
             this.busForm = { 
                 ...ticket,
                 duration_hours: ticket.duration_minutes ? (ticket.duration_minutes / 60).toFixed(1) : '',
                 intermediate_stops: ticket.intermediate_stops || [],
                 photos: ticket.photos || []
             };
+            this.fetchFleetBuses();
             this.activeTab = 'create';
         },
         duplicateTicket(ticket) {
             this.isEditingTicket = false;
             this.editingTicketId = null;
+            this.editingOriginalBusId = null;
+
+            let candidateBusId = '';
+            if (ticket.bus_id) {
+                const busExists = (this.activeFleetBuses || []).find(b => b.id === Number(ticket.bus_id));
+                if (busExists) {
+                    candidateBusId = String(ticket.bus_id);
+                } else {
+                    alert('Автобус исходного рейса сейчас недоступен или архивирован. Выберите другой автобус из автопарка.');
+                }
+            }
+            this.selectedFleetBusId = candidateBusId;
+
             this.busForm = {
                 transport_company: ticket.transport_company || '',
                 from_city: ticket.from_city || '',
@@ -482,14 +499,28 @@ export default {
                 passenger_comments: ticket.passenger_comments || '',
                 intermediate_stops: JSON.parse(JSON.stringify(ticket.intermediate_stops || [])),
                 photos: JSON.parse(JSON.stringify(ticket.photos || [])),
+                bus_id: candidateBusId ? Number(candidateBusId) : null,
                 accept_terms: true
             };
+            this.fetchFleetBuses();
             this.activeTab = 'create';
             alert('Данные рейса скопированы. Выберите дату отправления для нового рейса.');
         },
         reverseTicket(ticket) {
             this.isEditingTicket = false;
             this.editingTicketId = null;
+            this.editingOriginalBusId = null;
+
+            let candidateBusId = '';
+            if (ticket.bus_id) {
+                const busExists = (this.activeFleetBuses || []).find(b => b.id === Number(ticket.bus_id));
+                if (busExists) {
+                    candidateBusId = String(ticket.bus_id);
+                } else {
+                    alert('Автобус исходного рейса сейчас недоступен или архивирован. Выберите другой автобус из автопарка.');
+                }
+            }
+            this.selectedFleetBusId = candidateBusId;
 
             // Reverse intermediate stops order and reset times
             const reversedStops = [...(ticket.intermediate_stops || [])].reverse().map(s => ({
@@ -506,6 +537,8 @@ export default {
                 to_address: ticket.from_address || '',
                 departure_date: '', // Force choosing new date
                 departure_time: ticket.departure_time || '08:00',
+                arrival_date: '',
+                arrival_time: ticket.arrival_time || '',
                 duration_hours: ticket.duration_hours || '',
                 price: ticket.price || '',
                 premium_price: ticket.premium_price || '',
@@ -516,12 +549,14 @@ export default {
                 passenger_comments: ticket.passenger_comments || '',
                 intermediate_stops: reversedStops,
                 photos: JSON.parse(JSON.stringify(ticket.photos || [])),
+                bus_id: candidateBusId ? Number(candidateBusId) : null,
                 accept_terms: true
             };
+            this.fetchFleetBuses();
             this.activeTab = 'create';
             alert('Обратный рейс сформирован: маршрут развернут в обратную сторону. Выберите дату отправления.');
         },
-        async updateBusTicket() {
+        async updateBusTicket(allowConflict = false) {
             if (!this.validateBusForm()) return;
             this.loading = true;
             try {
@@ -544,7 +579,15 @@ export default {
                     premium_price: f.premium_price ? Number(f.premium_price) : null,
                     photos: f.photos || []
                 };
-                if (f.bus_type === 'double') {
+
+                if (this.selectedFleetBus) {
+                    updateData.bus_id = this.selectedFleetBus.id;
+                    updateData.bus_type = this.selectedFleetBus.bus_type;
+                    updateData.total_seats = this.selectedFleetBus.total_seats;
+                    updateData.floor1_seats = this.selectedFleetBus.floor1_seats;
+                    updateData.floor2_seats = this.selectedFleetBus.floor2_seats;
+                    updateData.photos = this.selectedFleetBus.photos;
+                } else if (f.bus_type === 'double') {
                     updateData.floor1_seats = Number(f.floor1_seats);
                     updateData.floor2_seats = Number(f.floor2_seats);
                     updateData.total_seats = updateData.floor1_seats + updateData.floor2_seats;
@@ -554,13 +597,36 @@ export default {
                     updateData.floor2_seats = null;
                     updateData.premium_price = null;
                 }
+
+                if (allowConflict) {
+                    updateData.allow_bus_conflict = true;
+                }
+
                 await api.put(`/bus-admin/tickets/${this.editingTicketId}`, updateData);
                 alert('Рейс успешно обновлен!');
                 this.isEditingTicket = false;
                 this.editingTicketId = null;
+                this.showScheduleConflictModal = false;
+                this.scheduleConflicts = [];
                 this.activeTab = 'tickets';
                 this.fetchTickets();
-            } catch (e) { console.error('Update error:', e.response?.data || e); alert('Ошибка при обновлении: ' + (e.response?.data?.error || e.message)); } finally { this.loading = false; }
+            } catch (e) {
+                if (e.response?.status === 409 && e.response?.data?.error === 'BUS_SCHEDULE_CONFLICT') {
+                    this.scheduleConflicts = e.response.data.conflicts || [];
+                    this.showScheduleConflictModal = true;
+                } else if (e.response?.status === 409 && e.response?.data?.error === 'BUS_REPLACEMENT_HAS_BOOKINGS') {
+                    const count = e.response.data.activeBookingCount;
+                    const countText = count !== undefined ? ` (активных бронирований: ${count})` : '';
+                    alert(`Автобус нельзя заменить, потому что на этом рейсе уже есть активные бронирования${countText}.`);
+                } else if (e.response?.status === 400 && e.response?.data?.error === 'BUS_UNASSIGN_FORBIDDEN') {
+                    alert('Нельзя отвязать автобус от рейса. Вы можете выбрать другой автобус из своего автопарка.');
+                } else {
+                    console.error('Update error:', e.response?.data || e);
+                    alert('Ошибка при обновлении: ' + (e.response?.data?.message || e.response?.data?.error || e.message));
+                }
+            } finally {
+                this.loading = false;
+            }
         },
         async completeTicket(ticket) {
             if (!confirm('Завершить этот рейс? Он больше не будет доступен для поиска.')) return;
@@ -1746,11 +1812,13 @@ watch: {
                     
                     <div class="bg-white rounded-[32px] border border-slate-100 p-6 lg:p-8 shadow-sm space-y-8">
                         <!-- Fleet Bus Selector Section -->
-                        <div v-if="!isEditingTicket" class="space-y-4 pb-6 border-b border-slate-100">
+                        <div class="space-y-4 pb-6 border-b border-slate-100">
                             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                 <div>
                                     <label class="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                        <span>🚌 Автобус из автопарка</span>
+                                        <span v-if="!isEditingTicket">🚌 Автобус из автопарка</span>
+                                        <span v-else-if="editingOriginalBusId">🚌 Замена автобуса рейса</span>
+                                        <span v-else>🚌 Назначить автобус из автопарка</span>
                                     </label>
                                     <p class="text-xs text-slate-500 mt-0.5">
                                         Характеристики, схема мест и фотографии подставятся автоматически
@@ -1787,7 +1855,8 @@ watch: {
                                         v-model="selectedFleetBusId" 
                                         class="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-slate-900 font-bold text-sm outline-none focus:border-amber-500 appearance-none cursor-pointer shadow-inner"
                                     >
-                                        <option value="">-- Выберите автобус из автопарка (или заполните вручную) --</option>
+                                        <option v-if="!isEditingTicket || !editingOriginalBusId" value="">-- Выберите автобус из автопарка (или заполните вручную) --</option>
+                                        <option v-else value="" disabled>-- Выберите автобус для замены --</option>
                                         <option v-for="b in activeFleetBuses" :key="'fleet-bus-'+b.id" :value="b.id">
                                             {{ b.brand }} {{ b.model }} ({{ b.name }}) • {{ b.license_plate }} • {{ b.total_seats }} мест • {{ b.bus_type === 'double' ? '2 этажа' : '1 этаж' }}
                                         </option>
@@ -1837,13 +1906,20 @@ watch: {
                                     </div>
 
                                     <div class="flex items-center gap-2 self-end sm:self-auto">
-                                        <button 
-                                            type="button" 
-                                            @click="selectedFleetBusId = ''" 
+                                        <button
+                                            v-if="!isEditingTicket || !editingOriginalBusId"
+                                            type="button"
+                                            @click="selectedFleetBusId = ''"
                                             class="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 font-bold text-xs transition-all shadow-sm cursor-pointer"
                                         >
                                             Сбросить выбор
                                         </button>
+                                        <span
+                                            v-else
+                                            class="px-3 py-1.5 rounded-xl bg-amber-100 border border-amber-300 text-amber-900 font-bold text-xs"
+                                        >
+                                            Выбрать другой автобус ⬆
+                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -2201,8 +2277,11 @@ watch: {
                     <button @click="showScheduleConflictModal = false" class="flex-1 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer">
                         Отмена
                     </button>
-                    <button @click="submitBusTicket(true)" class="flex-1 py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer">
+                    <button v-if="!isEditingTicket" @click="submitBusTicket(true)" class="flex-1 py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer">
                         Все равно создать
+                    </button>
+                    <button v-else @click="updateBusTicket(true)" class="flex-1 py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer">
+                        Все равно сохранить
                     </button>
                 </div>
             </div>
