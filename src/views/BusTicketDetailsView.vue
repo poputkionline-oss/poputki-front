@@ -27,6 +27,18 @@ export default {
                 show: false,
                 message: '',
                 type: 'success'
+            },
+            amenityLabels: {
+                wifi: 'Wi-Fi',
+                ac: 'Кондиционер',
+                usb: 'USB',
+                power_220v: 'Розетки 220V',
+                wc: 'Туалет',
+                tv: 'Телевизор',
+                kitchen: 'Мини-кухня',
+                blanket: 'Одеяла',
+                reclining_seats: 'Откидные кресла',
+                luggage: 'Багажное отделение'
             }
         };
     },
@@ -218,6 +230,69 @@ export default {
                             {{ availableSeats }}
                         </div>
                         <div class="text-xs text-gray-400">из {{ ticket.total_seats }}</div>
+                    </div>
+                </div>
+
+                <!-- Bus Details Section (Phase E) -->
+                <div v-if="ticket?.bus" class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 space-y-5">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 font-bold">
+                                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h8m0 0a2 2 0 012 2v9a2 2 0 01-2 2H8a2 2 0 01-2-2V9a2 2 0 012-2m0 0V5a2 2 0 012-2h4a2 2 0 012 2v2" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-slate-800 text-base leading-tight">{{ ticket.bus.brand }} {{ ticket.bus.model }}</h3>
+                                <div class="text-xs text-slate-400 font-medium">Автобус рейса</div>
+                            </div>
+                        </div>
+                        <span v-if="ticket.bus.license_plate"
+                              class="bg-slate-900 text-white font-mono text-xs font-bold px-2.5 py-1 rounded-lg border border-slate-700 shadow-sm tracking-wider">
+                            {{ ticket.bus.license_plate }}
+                        </span>
+                    </div>
+
+                    <!-- Bus Specs Badges -->
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                        <div class="bg-slate-50 border border-slate-100 p-3 rounded-2xl">
+                            <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Тип автобуса</div>
+                            <div class="text-sm font-bold text-slate-800 mt-0.5">
+                                {{ ticket.bus.bus_type === 'double' ? 'Двухэтажный' : 'Одноэтажный' }}
+                            </div>
+                        </div>
+                        <div class="bg-slate-50 border border-slate-100 p-3 rounded-2xl">
+                            <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Вместимость</div>
+                            <div class="text-sm font-bold text-slate-800 mt-0.5">
+                                {{ ticket.bus.total_seats }} мест
+                            </div>
+                        </div>
+                        <div v-if="ticket.bus.bus_type === 'double'" class="bg-blue-50/60 border border-blue-100 p-3 rounded-2xl col-span-2 sm:col-span-1">
+                            <div class="text-[10px] uppercase font-bold text-blue-500 tracking-wider">По этажам</div>
+                            <div class="text-xs font-bold text-blue-900 mt-0.5">
+                                1 эт: {{ ticket.bus.floor1_seats || 22 }} • 2 эт: {{ ticket.bus.floor2_seats || 56 }}
+                            </div>
+                        </div>
+                        <div v-if="ticket.bus.year_built" class="bg-slate-50 border border-slate-100 p-3 rounded-2xl">
+                            <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Год выпуска</div>
+                            <div class="text-sm font-bold text-slate-800 mt-0.5">{{ ticket.bus.year_built }} г.</div>
+                        </div>
+                        <div v-if="ticket.bus.color" class="bg-slate-50 border border-slate-100 p-3 rounded-2xl">
+                            <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Цвет кузова</div>
+                            <div class="text-sm font-bold text-slate-800 mt-0.5">{{ ticket.bus.color }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Amenities list -->
+                    <div v-if="ticket.bus.amenities && ticket.bus.amenities.length > 0" class="pt-1">
+                        <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2.5">Удобства в автобусе</div>
+                        <div class="flex flex-wrap gap-2">
+                            <span v-for="amenity in ticket.bus.amenities" :key="amenity"
+                                  class="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-100/80 px-3 py-1.5 rounded-xl text-xs font-semibold">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                {{ amenityLabels[amenity] || amenity }}
+                            </span>
+                        </div>
                     </div>
                 </div>
 

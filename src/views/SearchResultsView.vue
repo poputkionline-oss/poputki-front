@@ -17,7 +17,19 @@ export default {
       showAltOffer: false,
       altOfferType: '', // 'rides' | 'buses'
       user: JSON.parse(localStorage.getItem('user') || 'null'),
-      availableCities: []
+      availableCities: [],
+      amenityLabels: {
+        wifi: 'Wi-Fi',
+        ac: 'Кондиционер',
+        usb: 'USB',
+        power_220v: 'Розетки 220V',
+        wc: 'Туалет',
+        tv: 'Телевизор',
+        kitchen: 'Мини-кухня',
+        blanket: 'Одеяла',
+        reclining_seats: 'Откидные кресла',
+        luggage: 'Багажное отделение'
+      }
     };
   },
   methods: {
@@ -484,6 +496,34 @@ export default {
                 <div class="text-right">
                   <div class="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] leading-none mb-1">Время</div>
                   <div class="text-sm font-black text-blue-800">{{ ticket.matchingStop.time }}</div>
+                </div>
+              </div>
+
+              <!-- Bus Info Badge (Phase E) -->
+              <div v-if="ticket.bus" class="mt-3.5 pt-3 border-t border-slate-100 flex items-center justify-between gap-3 text-xs">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <div class="w-8 h-8 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h8m0 0a2 2 0 012 2v9a2 2 0 01-2 2H8a2 2 0 01-2-2V9a2 2 0 012-2m0 0V5a2 2 0 012-2h4a2 2 0 012 2v2" />
+                    </svg>
+                  </div>
+                  <div class="min-w-0 truncate">
+                    <div class="font-bold text-slate-800 truncate">{{ ticket.bus.brand }} {{ ticket.bus.model }}</div>
+                    <div class="text-[11px] text-slate-500 font-medium">
+                      {{ ticket.bus.bus_type === 'double' ? 'Двухэтажный' : 'Одноэтажный' }} • {{ ticket.bus.total_seats }} мест
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Top amenities preview -->
+                <div v-if="ticket.bus.amenities && ticket.bus.amenities.length > 0" class="hidden sm:flex items-center gap-1.5 shrink-0">
+                  <span v-for="amenity in ticket.bus.amenities.slice(0, 3)" :key="amenity"
+                        class="bg-slate-50 border border-slate-200/60 px-2 py-0.5 rounded-lg text-[10px] font-semibold text-slate-600">
+                    {{ amenityLabels[amenity] || amenity }}
+                  </span>
+                  <span v-if="ticket.bus.amenities.length > 3" class="text-[10px] text-gray-400 font-medium">
+                    +{{ ticket.bus.amenities.length - 3 }}
+                  </span>
                 </div>
               </div>
 
