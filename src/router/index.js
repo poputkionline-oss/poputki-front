@@ -124,6 +124,12 @@ const router = createRouter({
             name: 'ticket-verify-alias',
             component: () => import('../views/TicketVerificationView.vue'),
             meta: { hideBottomNav: true }
+        },
+        {
+            path: '/ticket-preview',
+            name: 'ticket-preview',
+            component: () => import('../views/TicketPreviewView.vue'),
+            meta: { hideBottomNav: true }
         }
     ],
     scrollBehavior(to, from, savedPosition) {
@@ -236,7 +242,7 @@ router.beforeEach(async (to, from, next) => {
     const isAuthenticated = !!localStorage.getItem('token');
     user = JSON.parse(localStorage.getItem('user')); // Re-fetch after possible sync
     const isComplete = isProfileComplete(user);
-    const publicRoutes = ['auth', 'admin', 'bus-admin', 'ride-details', 'landing', 'search', 'payment-result', 'ticket-verification', 'ticket-verify-alias', 'terms'];
+    const publicRoutes = ['auth', 'admin', 'bus-admin', 'ride-details', 'landing', 'search', 'payment-result', 'ticket-verification', 'ticket-verify-alias', 'ticket-preview', 'terms'];
 
     if (!publicRoutes.includes(to.name)) {
         if (!isAuthenticated || !isComplete) {
