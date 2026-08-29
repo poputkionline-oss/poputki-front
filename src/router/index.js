@@ -112,6 +112,18 @@ const router = createRouter({
             name: 'payment-result',
             component: () => import('../views/PaymentResultView.vue'),
             meta: { hideBottomNav: true }
+        },
+        {
+            path: '/ticket/:token',
+            name: 'ticket-verification',
+            component: () => import('../views/TicketVerificationView.vue'),
+            meta: { hideBottomNav: true }
+        },
+        {
+            path: '/ticket-verify/:token',
+            name: 'ticket-verify-alias',
+            component: () => import('../views/TicketVerificationView.vue'),
+            meta: { hideBottomNav: true }
         }
     ],
     scrollBehavior(to, from, savedPosition) {
@@ -224,7 +236,7 @@ router.beforeEach(async (to, from, next) => {
     const isAuthenticated = !!localStorage.getItem('token');
     user = JSON.parse(localStorage.getItem('user')); // Re-fetch after possible sync
     const isComplete = isProfileComplete(user);
-    const publicRoutes = ['auth', 'admin', 'bus-admin', 'ride-details', 'landing', 'search', 'payment-result'];
+    const publicRoutes = ['auth', 'admin', 'bus-admin', 'ride-details', 'landing', 'search', 'payment-result', 'ticket-verification', 'ticket-verify-alias', 'terms'];
 
     if (!publicRoutes.includes(to.name)) {
         if (!isAuthenticated || !isComplete) {

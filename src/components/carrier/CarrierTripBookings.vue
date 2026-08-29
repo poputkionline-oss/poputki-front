@@ -1,9 +1,13 @@
 <script>
 import api from '../../api';
 import { exportPassengerManifestExcel, sortPassengersBySeat } from '../../utils/excelExport';
+import PassengerTicket from '../ticket/PassengerTicket.vue';
 
 export default {
     name: 'CarrierTripBookings',
+    components: {
+        PassengerTicket
+    },
     props: {
         tickets: {
             type: Array,
@@ -33,6 +37,17 @@ export default {
             summary: null,
             summaryLoading: false,
             expandedBookingIds: {},
+            ticketModal: {
+                show: false,
+                loading: false,
+                data: null
+            },
+            bulkPrintModal: {
+                show: false,
+                loading: false,
+                tripInfo: null,
+                manifest: []
+            },
             toast: {
                 show: false,
                 message: '',
@@ -330,6 +345,49 @@ export default {
                 createdAt: p.createdAt
             }));
             await exportPassengerManifestExcel(this.selectedTicket, sortPassengersBySeat(manifestForExport), this.user);
+        },
+        async openTicketPreview(bookingId) {
+            if (!bookingId) return;
+            this.ticketModal.loading = true;
+            this.ticketModal.show = true;
+            this.ticketModal.data = null;
+            try {
+                const res = await api.get(`/bus-admin/bookings/${bookingId}/ticket`);
+                this.ticketModal.data = res.data;
+            } catch (err) {
+                console.error('Error fetching ticket preview:', err);
+                this.toast.message = err.response?.data?.error || 'Ошибка загрузки билета';
+                this.toast.type = 'error';
+                this.toast.show = true;
+                setTimeout(() => { this.toast.show = false; }, 3000);
+                this.ticketModal.show = false;
+            } finally {
+                this.ticketModal.loading = false;
+            }
+        },
+        async openBulkPrint(ticketId) {
+            if (!ticketId) return;
+            this.bulkPrintModal.loading = true;
+            this.bulkPrintModal.show = true;
+            this.bulkPrintModal.manifest = [];
+            this.bulkPrintModal.tripInfo = null;
+            try {
+                const res = await api.get(`/bus-admin/tickets/${ticketId}/print-manifest`);
+                this.bulkPrintModal.manifest = res.data.tickets || [];
+                this.bulkPrintModal.tripInfo = res.data;
+            } catch (err) {
+                console.error('Error fetching bulk print manifest:', err);
+                this.toast.message = err.response?.data?.error || 'Ошибка формирования билетов рейса';
+                this.toast.type = 'error';
+                this.toast.show = true;
+                setTimeout(() => { this.toast.show = false; }, 3000);
+                this.bulkPrintModal.show = false;
+            } finally {
+                this.bulkPrintModal.loading = false;
+            }
+        },
+        triggerBulkPrint() {
+            window.print();
         }
     }
 };
@@ -346,8 +404,16 @@ export default {
                     </h2>
                     <p class="text-xs text-slate-500">Выберите рейс для просмотра полного списка пассажиров и финансовой сводки</p>
                 </div>
-                <div class="flex items-center gap-2">
-                    <button 
+                <div class="flex items-center gap-2 flex-wrap">
+                    <button
+                        @click="openBulkPrint(selectedTicketId)"
+                        :disabled="!selectedTicket || statusCounts.confirmed === 0"
+                        class="px-4 py-2.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800 font-bold text-xs flex items-center gap-2 transition-all active:scale-95 disabled:opacity-40 shadow-sm"
+                        title="Распечатать все билеты подтвержденных пассажиров"
+                    >
+                        <span>🖨</span> <span>Распечатать билеты</span>
+                    </button>
+                    <button
                         @click="exportExcel"
                         :disabled="!selectedTicket || ticketPassengers.length === 0"
                         class="px-4 py-2.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60 font-bold text-xs flex items-center gap-2 transition-all active:scale-95 disabled:opacity-40"
@@ -365,8 +431,8 @@ export default {
                 Нет созданных рейсов
             </div>
             <div v-else class="flex gap-3 overflow-x-auto pb-2 pt-1 scrollbar-thin scrollbar-thumb-slate-200">
-                <button 
-                    v-for="t in sortedTickets" 
+                <button
+                    v-for="t in sortedTickets"
                     :key="t.id"
                     @click="selectTicket(t.id)"
                     :class="selectedTicketId === t.id ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20 border-slate-900' : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-100'"
@@ -396,7 +462,7 @@ export default {
 
         <!-- TRIP ACTIVE: FINANCIAL & OPERATIONAL SUMMARY WIDGET -->
         <div v-if="selectedTicket" class="space-y-6">
-            
+
             <!-- Summary Header Banner -->
             <div class="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6 rounded-[32px] shadow-xl relative overflow-hidden space-y-6">
                 <!-- Background Accent Glow -->
@@ -482,31 +548,31 @@ export default {
                     <div class="flex flex-wrap items-center gap-2">
                         <!-- PRIMARY STATUS / PAYMENT FILTER -->
                         <div class="flex bg-slate-100 p-1 rounded-2xl text-xs font-bold">
-                            <button 
-                                @click="paymentFilter = 'all'; boardingFilter = 'all'" 
-                                :class="paymentFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
+                            <button
+                                @click="paymentFilter = 'all'; boardingFilter = 'all'"
+                                :class="paymentFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
                                 class="px-3 py-1.5 rounded-xl transition-all"
                             >
                                 Все ({{ statusCounts.all }})
                             </button>
-                            <button 
-                                @click="paymentFilter = 'confirmed'" 
-                                :class="paymentFilter === 'confirmed' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
+                            <button
+                                @click="paymentFilter = 'confirmed'"
+                                :class="paymentFilter === 'confirmed' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
                                 class="px-3 py-1.5 rounded-xl transition-all"
                             >
                                 ✓ Подтверждены ({{ statusCounts.confirmed }})
                             </button>
-                            <button 
-                                @click="paymentFilter = 'pending_payment'; boardingFilter = 'all'" 
-                                :class="paymentFilter === 'pending_payment' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-700 hover:bg-amber-50'" 
+                            <button
+                                @click="paymentFilter = 'pending_payment'; boardingFilter = 'all'"
+                                :class="paymentFilter === 'pending_payment' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-700 hover:bg-amber-50'"
                                 class="px-3 py-1.5 rounded-xl transition-all font-black flex items-center gap-1"
                             >
                                 <span>⏳ Ожидают оплаты</span>
                                 <span v-if="statusCounts.pending_payment > 0" class="px-1.5 py-0.2 text-[10px] rounded-full" :class="paymentFilter === 'pending_payment' ? 'bg-white text-amber-900' : 'bg-amber-200 text-amber-900'">{{ statusCounts.pending_payment }}</span>
                             </button>
-                            <button 
-                                @click="paymentFilter = 'cancelled'; boardingFilter = 'all'" 
-                                :class="paymentFilter === 'cancelled' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-400 hover:text-slate-700'" 
+                            <button
+                                @click="paymentFilter = 'cancelled'; boardingFilter = 'all'"
+                                :class="paymentFilter === 'cancelled' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-400 hover:text-slate-700'"
                                 class="px-3 py-1.5 rounded-xl transition-all"
                             >
                                 Отменены ({{ statusCounts.cancelled }})
@@ -515,30 +581,30 @@ export default {
 
                         <!-- BOARDING SUB-FILTER (Active only for confirmed/all) -->
                         <div v-if="paymentFilter !== 'pending_payment' && paymentFilter !== 'cancelled'" class="flex bg-slate-100 p-1 rounded-2xl text-xs font-bold">
-                            <button 
-                                @click="boardingFilter = 'all'" 
-                                :class="boardingFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
+                            <button
+                                @click="boardingFilter = 'all'"
+                                :class="boardingFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
                                 class="px-2.5 py-1.5 rounded-xl transition-all"
                             >
                                 Посадка: Все
                             </button>
-                            <button 
-                                @click="boardingFilter = 'boarded'" 
-                                :class="boardingFilter === 'boarded' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
+                            <button
+                                @click="boardingFilter = 'boarded'"
+                                :class="boardingFilter === 'boarded' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
                                 class="px-2.5 py-1.5 rounded-xl transition-all"
                             >
                                 ✓ Сели ({{ boardingCounts.boarded }})
                             </button>
-                            <button 
-                                @click="boardingFilter = 'pending_boarding'" 
-                                :class="boardingFilter === 'pending_boarding' ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
+                            <button
+                                @click="boardingFilter = 'pending_boarding'"
+                                :class="boardingFilter === 'pending_boarding' ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
                                 class="px-2.5 py-1.5 rounded-xl transition-all"
                             >
                                 ⏳ Ждут ({{ boardingCounts.pending_boarding }})
                             </button>
-                            <button 
-                                @click="boardingFilter = 'no_show'" 
-                                :class="boardingFilter === 'no_show' ? 'bg-white text-rose-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
+                            <button
+                                @click="boardingFilter = 'no_show'"
+                                :class="boardingFilter === 'no_show' ? 'bg-white text-rose-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
                                 class="px-2.5 py-1.5 rounded-xl transition-all"
                             >
                                 ✕ No-show ({{ boardingCounts.no_show }})
@@ -547,23 +613,23 @@ export default {
 
                         <!-- SOURCE FILTER -->
                         <div class="flex bg-slate-100 p-1 rounded-2xl text-xs font-bold">
-                            <button 
-                                @click="sourceFilter = 'all'" 
-                                :class="sourceFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
+                            <button
+                                @click="sourceFilter = 'all'"
+                                :class="sourceFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
                                 class="px-2.5 py-1.5 rounded-xl transition-all"
                             >
                                 Все
                             </button>
-                            <button 
-                                @click="sourceFilter = 'online'" 
-                                :class="sourceFilter === 'online' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
+                            <button
+                                @click="sourceFilter = 'online'"
+                                :class="sourceFilter === 'online' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
                                 class="px-2.5 py-1.5 rounded-xl transition-all"
                             >
                                 Онлайн
                             </button>
-                            <button 
-                                @click="sourceFilter = 'manual'" 
-                                :class="sourceFilter === 'manual' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'" 
+                            <button
+                                @click="sourceFilter = 'manual'"
+                                :class="sourceFilter === 'manual' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
                                 class="px-2.5 py-1.5 rounded-xl transition-all"
                             >
                                 Ручные
@@ -573,10 +639,10 @@ export default {
 
                     <!-- Search Box -->
                     <div class="relative w-full lg:w-72">
-                        <input 
-                            v-model="searchQuery" 
+                        <input
+                            v-model="searchQuery"
                             type="text"
-                            placeholder="Поиск по ФИО, телефону, месту..." 
+                            placeholder="Поиск по ФИО, телефону, месту..."
                             class="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-500"
                         />
                         <span class="absolute left-3.5 top-3 text-slate-400 text-xs">🔍</span>
@@ -597,7 +663,7 @@ export default {
             </div>
 
             <div v-else class="space-y-4">
-                
+
                 <!-- DESKTOP TABLE VIEW (HIDDEN ON SMALL SCREENS) -->
                 <div class="hidden lg:block bg-white rounded-[28px] border border-slate-100 overflow-hidden shadow-sm">
                     <div class="overflow-x-auto">
@@ -654,7 +720,7 @@ export default {
 
                                     <!-- Source -->
                                     <td class="px-5 py-4">
-                                        <span 
+                                        <span
                                             :class="{
                                                 'bg-blue-50 text-blue-700 border-blue-200/60': p.isManual,
                                                 'bg-emerald-50 text-emerald-700 border-emerald-200/60': !p.isManual
@@ -684,19 +750,19 @@ export default {
 
                                     <!-- Payment / Business Status -->
                                     <td class="px-5 py-4">
-                                        <span 
+                                        <span
                                             v-if="p.status === 'pending_payment'"
                                             class="inline-block px-2.5 py-1 rounded-lg text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-300"
                                         >
                                             ⏳ Ожидает оплаты
                                         </span>
-                                        <span 
+                                        <span
                                             v-else-if="p.status === 'cancelled'"
                                             class="inline-block px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-500"
                                         >
                                             ✕ Отменено
                                         </span>
-                                        <span 
+                                        <span
                                             v-else
                                             class="inline-block px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200"
                                         >
@@ -709,7 +775,7 @@ export default {
                                         <span v-if="p.status !== 'confirmed'" class="text-slate-300 font-bold px-2 py-1">
                                             —
                                         </span>
-                                        <span 
+                                        <span
                                             v-else
                                             :class="{
                                                 'bg-emerald-100 text-emerald-800': p.boardingStatus === 'boarded',
@@ -725,6 +791,14 @@ export default {
                                     <!-- Actions -->
                                     <td class="px-5 py-4 text-right">
                                         <div class="inline-flex items-center gap-2">
+                                            <button
+                                                @click="openTicketPreview(p.bookingId)"
+                                                class="px-2.5 py-1 text-slate-700 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200/60 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1"
+                                                title="Посмотреть и распечатать электронный билет"
+                                            >
+                                                <span>🎫</span>
+                                                <span>Билет</span>
+                                            </button>
                                             <button @click="$emit('edit-booking', p.bookingId)" class="p-1.5 text-slate-400 hover:text-amber-500 rounded-lg hover:bg-slate-100 transition-colors" title="Редактировать">
                                                 ✎
                                             </button>
@@ -741,8 +815,8 @@ export default {
 
                 <!-- MOBILE CARDS VIEW (<= 390px / SMALL SCREENS) -->
                 <div class="lg:hidden space-y-3">
-                    <div 
-                        v-for="p in filteredPassengers" 
+                    <div
+                        v-for="p in filteredPassengers"
                         :key="`m_${p.bookingId}_${p.passengerIndex}`"
                         class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3"
                     >
@@ -757,19 +831,19 @@ export default {
                                 </div>
                             </div>
                             <!-- Combined Status Badges -->
-                            <span 
+                            <span
                                 v-if="p.status === 'pending_payment'"
                                 class="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 shrink-0 border border-amber-300"
                             >
                                 ⏳ Ожидает оплаты
                             </span>
-                            <span 
+                            <span
                                 v-else-if="p.status === 'cancelled'"
                                 class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 shrink-0"
                             >
                                 ✕ Отменено
                             </span>
-                            <span 
+                            <span
                                 v-else
                                 :class="{
                                     'bg-emerald-100 text-emerald-800 font-black': p.boardingStatus === 'boarded',
@@ -808,6 +882,13 @@ export default {
                                 </div>
                             </div>
                             <div class="flex items-center gap-2">
+                                <button
+                                    @click="openTicketPreview(p.bookingId)"
+                                    class="px-2.5 py-1.5 text-slate-700 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200/60 rounded-lg text-xs font-bold"
+                                    title="Билет"
+                                >
+                                    🎫 Билет
+                                </button>
                                 <button @click="$emit('edit-booking', p.bookingId)" class="p-2 text-slate-400 hover:text-amber-500 rounded-lg bg-slate-50 text-xs font-bold">
                                     ✎
                                 </button>
@@ -816,7 +897,14 @@ export default {
                                 </button>
                             </div>
                         </div>
-                        <div v-else class="pt-2 border-t border-slate-50 flex items-center justify-end text-xs">
+                        <div v-else class="pt-2 border-t border-slate-50 flex items-center justify-between text-xs">
+                            <button
+                                @click="openTicketPreview(p.bookingId)"
+                                class="px-2.5 py-1.5 text-slate-700 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200/60 rounded-lg text-xs font-bold"
+                                title="Билет"
+                            >
+                                🎫 Билет
+                            </button>
                             <div class="flex items-center gap-2">
                                 <button @click="$emit('edit-booking', p.bookingId)" class="p-2 text-slate-400 hover:text-amber-500 rounded-lg bg-slate-50 text-xs font-bold">
                                     ✎
@@ -830,5 +918,86 @@ export default {
                 </div>
             </div>
         </div>
+
+        <!-- MODAL 1: SINGLE TICKET PREVIEW & PRINT MODAL -->
+        <div v-if="ticketModal.show" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm overflow-y-auto">
+            <div class="w-full max-w-2xl bg-slate-100 rounded-[32px] p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+                <div v-if="ticketModal.loading" class="py-16 text-center space-y-3">
+                    <div class="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                    <div class="text-xs font-bold text-slate-600">Загрузка данных билета...</div>
+                </div>
+                <div v-else-if="ticketModal.data" class="space-y-4">
+                    <PassengerTicket
+                        :ticket="ticketModal.data"
+                        mode="screen"
+                        :showControls="true"
+                        @close="ticketModal.show = false"
+                    />
+                </div>
+            </div>
+        </div>
+
+        <!-- MODAL 2: BULK PRINT TRIP TICKETS PREVIEW -->
+        <div v-if="bulkPrintModal.show" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm overflow-y-auto">
+            <div class="w-full max-w-3xl bg-slate-100 rounded-[32px] p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+
+                <!-- Bulk Print Header Controls (Hidden when print is triggered) -->
+                <div class="no-print flex items-center justify-between gap-3 bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-md">
+                    <div>
+                        <div class="text-xs font-black uppercase text-amber-400">POPUTKI.ONLINE • МАССОВАЯ ПЕЧАТЬ БИЛЕТОВ</div>
+                        <div class="text-xs text-slate-300 mt-0.5">
+                            Рейс #{{ bulkPrintModal.tripInfo?.tripId }}: {{ bulkPrintModal.tripInfo?.fromCity }} → {{ bulkPrintModal.tripInfo?.toCity }} (Билетов: {{ bulkPrintModal.manifest?.length || 0 }})
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button
+                            @click="triggerBulkPrint"
+                            :disabled="bulkPrintModal.manifest?.length === 0"
+                            class="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-40"
+                        >
+                            <span>🖨</span>
+                            <span>Печать всех билетов</span>
+                        </button>
+                        <button
+                            @click="bulkPrintModal.show = false"
+                            class="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs transition-all active:scale-95"
+                            title="Закрыть"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Loading State -->
+                <div v-if="bulkPrintModal.loading" class="py-16 text-center space-y-3">
+                    <div class="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                    <div class="text-xs font-bold text-slate-600">Формирование печатных билетов рейса...</div>
+                </div>
+
+                <!-- Empty Manifest State -->
+                <div v-else-if="bulkPrintModal.manifest?.length === 0" class="py-12 bg-white rounded-2xl text-center space-y-2 p-6">
+                    <div class="text-3xl">🎫</div>
+                    <div class="font-bold text-slate-800">Нет подтвержденных билетов для печати</div>
+                    <p class="text-xs text-slate-400">На этот рейс пока нет подтвержденных бронирований.</p>
+                </div>
+
+                <!-- List of Printable Tickets (Rendered sequentially for print) -->
+                <div v-else class="space-y-6">
+                    <div
+                        v-for="t in bulkPrintModal.manifest"
+                        :key="t.bookingId"
+                        class="page-break-after"
+                    >
+                        <PassengerTicket
+                            :ticket="t"
+                            mode="print"
+                            :showControls="false"
+                        />
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
     </div>
 </template>

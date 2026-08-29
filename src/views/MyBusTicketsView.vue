@@ -2,11 +2,13 @@
 import api from '../api';
 import { openPhone, copyToClipboard } from '../telegram';
 import AppToast from '../components/AppToast.vue';
+import PassengerTicket from '../components/ticket/PassengerTicket.vue';
 
 export default {
     name: 'MyBusTicketsView',
     components: {
-        AppToast
+        AppToast,
+        PassengerTicket
     },
     data() {
         return {
@@ -15,6 +17,10 @@ export default {
             loading: true,
             showSuccessBanner: false,
             phoneExpandedBookings: new Set(),
+            ticketModal: {
+                show: false,
+                data: null
+            },
             toast: {
                 show: false,
                 message: '',
@@ -75,6 +81,71 @@ export default {
                     setTimeout(() => { this.toast.show = false; }, 3000);
                 }
             }
+        },
+        viewTicket(b) {
+            if (!b) return;
+            const seats = Array.isArray(b.seat_numbers) ? b.seat_numbers : (typeof b.seat_numbers === 'string' ? JSON.parse(b.seat_numbers || '[]') : []);
+            const pData = Array.isArray(b.passengers_data) ? b.passengers_data : (typeof b.passengers_data === 'string' ? JSON.parse(b.passengers_data || '[]') : []);
+            const totalPrice = Number(b.total_price || 0);
+            const isManual = b.channel === 'manual' || b.source_type === 'manual';
+            const commAmount = Number(b.commission_amount ?? (isManual ? 0 : Math.round(totalPrice * 0.1)));
+            const remainingAmount = Math.max(0, totalPrice - commAmount);
+            const ticketNumber = `POP-${String(b.id).padStart(6, '0')}`;
+
+            this.ticketModal.data = {
+                brand: 'POPUTKI.ONLINE',
+                ticketNumber,
+                bookingId: b.id,
+                verificationToken: `${b.id}`,
+                verificationUrl: `https://www.poputki.online/ticket/${b.id}`,
+                status: b.status || 'confirmed',
+                statusLabel: b.status === 'confirmed' ? 'Подтвержден' : (b.status === 'pending_payment' ? 'Ожидает оплаты' : 'Отменен'),
+                isValid: b.status === 'confirmed',
+                boardingStatus: b.boarding_status || 'pending_boarding',
+                boardingLabel: b.boarding_status === 'boarded' ? 'Пассажир сел' : (b.boarding_status === 'no_show' ? 'Не явился' : 'Ожидает посадки'),
+                route: {
+                    fromCity: b.from_city,
+                    toCity: b.to_city,
+                    fromAddress: b.from_address,
+                    toAddress: b.to_address,
+                    pickupCity: b.pickup_city || b.from_city,
+                    dropOffCity: b.drop_off_city || b.to_city,
+                    departureDate: b.departure_date,
+                    departureTime: b.departure_time ? b.departure_time.substring(0, 5) : '',
+                    arrivalDate: b.arrival_date || b.departure_date,
+                    arrivalTime: b.arrival_time ? b.arrival_time.substring(0, 5) : ''
+                },
+                passenger: {
+                    primaryName: b.passenger_name || (pData[0] ? `${pData[0].lastName || ''} ${pData[0].firstName || ''}`.trim() : this.user?.name || 'Пассажир'),
+                    passengerCount: seats.length || 1,
+                    seats: seats,
+                    seatNumbersDisplay: seats.join(', '),
+                    items: pData.length > 0 ? pData.map((p, idx) => ({
+                        index: idx + 1,
+                        seat: seats[idx] || p.seatNumber || '—',
+                        name: `${p.lastName || ''} ${p.firstName || ''} ${p.middleName || ''}`.trim() || 'Пассажир',
+                        docType: p.docType || 'Документ',
+                        docNumber: p.docNumber || '—'
+                    })) : seats.map(s => ({ index: 1, seat: s, name: this.user?.name || 'Пассажир', docType: '—', docNumber: '—' }))
+                },
+                bus: {
+                    brand: b.bus_type === 'double' ? 'Двухэтажный автобус' : 'Автобус',
+                    model: b.bus_model || '',
+                    bus_type: b.bus_type || 'single'
+                },
+                payment: {
+                    currency: 'сомони',
+                    currencyShort: 'сом',
+                    totalPrice,
+                    paidAmount: commAmount,
+                    remainingAmount
+                },
+                carrier: {
+                    companyName: b.transport_company || 'POPUTKI.ONLINE',
+                    operatorPhone: b.operator_phone
+                }
+            };
+            this.ticketModal.show = true;
         }
     },
     async mounted() {
@@ -158,14 +229,14 @@ export default {
                         <div class="bg-gradient-to-br from-blue-700 to-indigo-800 px-6 py-5 relative">
                             <!-- Subtle background pattern -->
                             <div class="absolute inset-0 opacity-10" style="background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, #fff 10px, #fff 11px);"></div>
-                            
+
                             <div class="flex items-center justify-between mb-4 relative z-10">
                                 <div class="text-blue-200 text-xs font-bold uppercase tracking-widest shrink-0">{{ b.transport_company }}</div>
                                 <div class="bg-white/20 backdrop-blur text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest border border-white/20">
                                     Подтверждено
                                 </div>
                             </div>
-                            
+
                             <div class="flex items-center justify-between relative z-10">
                                 <div>
                                     <div class="text-blue-200 text-xs font-bold uppercase tracking-widest mb-1">{{ b.departure_time }}</div>
@@ -202,7 +273,7 @@ export default {
                                         <div class="font-bold text-slate-800 text-sm">{{ formatDate(b.departure_date) }}</div>
                                     </div>
                                 </div>
-                                
+
                                 <div class="text-right space-y-4">
                                      <div>
                                         <div class="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Места</div>
@@ -248,14 +319,14 @@ export default {
                         </div>
 
                         <!-- Ticket Footer (QR Code & ID) -->
-                        <div class="px-6 pb-6 pt-2 bg-white flex items-center justify-between">
+                        <div class="px-6 pb-4 pt-2 bg-white flex items-center justify-between">
                             <div>
                                 <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Номер билета</div>
                                 <div class="text-sm font-mono font-bold text-slate-800">
                                     TK-{{ String(b.id || Math.floor(Math.random() * 1000)).padStart(6, '0') }}-{{ new Date(b.departure_date).getMonth() + 1 }}
                                 </div>
                             </div>
-                            
+
                             <!-- Fake Barcode Element to look like a ticket -->
                             <div class="flex items-center h-10 gap-[2px] opacity-80 mix-blend-multiply">
                                 <div class="w-1 h-full bg-slate-800"></div>
@@ -272,6 +343,16 @@ export default {
                                 <div class="w-[3px] h-full bg-slate-800"></div>
                                 <div class="w-1 h-full bg-slate-800"></div>
                             </div>
+                        </div>
+
+                        <!-- Ticket Action Button -->
+                        <div class="px-6 pb-6 bg-white">
+                            <button
+                                @click="viewTicket(b)"
+                                class="w-full py-3 bg-slate-900 hover:bg-slate-800 text-amber-400 font-bold text-xs rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-98 shadow-md"
+                            >
+                                <span>🎫</span> <span>Электронный билет / Печать</span>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -302,27 +383,44 @@ export default {
                         </div>
                         <div class="px-5 py-3 flex items-center justify-between text-sm">
                             <div class="text-gray-400">{{ formatDate(b.departure_date) }}</div>
-                            <div class="font-bold text-gray-500">{{ b.total_price }} с.</div>
+                            <button @click="viewTicket(b)" class="text-xs font-bold text-slate-700 hover:text-amber-600">
+                                🎫 Билет
+                            </button>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- TICKET MODAL PREVIEW -->
+        <div v-if="ticketModal.show" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm overflow-y-auto">
+            <div class="w-full max-w-2xl bg-slate-100 rounded-[32px] p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+                <div v-if="ticketModal.data">
+                    <PassengerTicket
+                        :ticket="ticketModal.data"
+                        mode="screen"
+                        :showControls="true"
+                        @close="ticketModal.show = false"
+                    />
+                </div>
+            </div>
+        </div>
+
         <AppToast :show="toast.show" :message="toast.message" :type="toast.type" />
     </div>
 </template>
 
 <style scoped>
-.expand-enter-active, .expand-leave-active { 
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
-    max-height: 100px; 
-    opacity: 1; 
-    overflow: hidden; 
+.expand-enter-active, .expand-leave-active {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    max-height: 100px;
+    opacity: 1;
+    overflow: hidden;
 }
-.expand-enter-from, .expand-leave-to { 
-    max-height: 0; 
-    opacity: 0; 
-    transform: translateY(-10px); 
+.expand-enter-from, .expand-leave-to {
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(-10px);
 }
 
 .slide-down-enter-active, .slide-down-leave-active { transition: all 0.3s ease; }
