@@ -14,15 +14,15 @@ import CarrierCustomers from '../components/carrier/CarrierCustomers.vue';
 import CarrierActivity from '../components/carrier/CarrierActivity.vue';
 import CarrierDashboard from '../components/carrier/CarrierDashboard.vue';
 import CarrierFleet from '../components/carrier/CarrierFleet.vue';
-import { 
+import {
 
-  Chart as ChartJS, 
-  Title, 
-  Tooltip, 
-  Legend, 
-  LineElement, 
-  PointElement, 
-  CategoryScale, 
+  Chart as ChartJS,
+  Title,
+  Tooltip,
+  Legend,
+  LineElement,
+  PointElement,
+  CategoryScale,
   LinearScale,
   ArcElement,
   BarElement
@@ -30,12 +30,12 @@ import {
 import { Line, Pie, Bar } from 'vue-chartjs';
 
 ChartJS.register(
-  Title, 
-  Tooltip, 
-  Legend, 
-  LineElement, 
-  PointElement, 
-  CategoryScale, 
+  Title,
+  Tooltip,
+  Legend,
+  LineElement,
+  PointElement,
+  CategoryScale,
   LinearScale,
   ArcElement,
   BarElement
@@ -113,6 +113,9 @@ export default {
                 intermediate_stops: [],
                 photos: [],
                 bus_id: null,
+                group_leader_name: '',
+                group_leader_phone: '',
+                group_leader_whatsapp: '',
                 accept_terms: true
             },
             fleetBuses: [],
@@ -237,7 +240,7 @@ export default {
         async fetchData() {
             if (!this.user) return;
             this.fetchCities();
-            
+
             // Parallel fetch to avoid long sequential waits
             const promises = [];
             if (this.activeTab === 'dashboard') {
@@ -355,7 +358,7 @@ export default {
             if (!this.busForm.arrival_time) e.arrival_time = 'Укажите время прибытия';
             if (!this.busForm.duration_hours || this.busForm.duration_hours <= 0) e.duration_hours = 'Укажите длительность (в часах)';
             if (!this.busForm.price || this.busForm.price <= 0) e.price = 'Укажите цену';
-            
+
             // Only validate manual capacity if NOT using selectedFleetBus
             if (!this.selectedFleetBus) {
                 if (this.busForm.bus_type === 'double') {
@@ -367,7 +370,7 @@ export default {
             }
 
             if (!this.busForm.accept_terms) e.accept_terms = 'Необходимо согласиться с условиями использования и публичной офертой';
-            
+
             this.busErrors = e;
             return Object.keys(e).length === 0;
         },
@@ -427,6 +430,9 @@ export default {
                     intermediate_stops: [],
                     photos: [],
                     bus_id: null,
+                    group_leader_name: '',
+                    group_leader_phone: '',
+                    group_leader_whatsapp: '',
                     accept_terms: true
                 };
 
@@ -454,7 +460,7 @@ export default {
             this.editingTicketId = ticket.id;
             this.editingOriginalBusId = ticket.bus_id || null;
             this.selectedFleetBusId = ticket.bus_id ? String(ticket.bus_id) : '';
-            this.busForm = { 
+            this.busForm = {
                 ...ticket,
                 duration_hours: ticket.duration_minutes ? (ticket.duration_minutes / 60).toFixed(1) : '',
                 intermediate_stops: ticket.intermediate_stops || [],
@@ -815,7 +821,7 @@ export default {
                 // Parse name
                 let lastName = msg.surname || msg.lastName || msg.last_name || '';
                 let firstName = msg.givenName || msg.given_name || msg.firstName || msg.first_name || '';
-                
+
                 if (!lastName && !firstName && msg.name) {
                     const cleanName = msg.name.replace(/<+/g, ' ').replace(',', '').trim();
                     const nameParts = cleanName.split(/\s+/);
@@ -856,20 +862,20 @@ export default {
                 if (lastName) p.lastName = lastName;
                 if (firstName) p.firstName = firstName;
                 if (birthDate) p.birthDate = birthDate;
-                
+
                 const docNum = msg.passportNumber || msg.passport_number || msg.doc_number;
                 if (docNum) p.docNumber = docNum;
-                
+
                 const rawGender = msg.gender || msg.sex;
                 if (rawGender) {
-                    p.gender = (rawGender === 'M' || rawGender === 'MALE') ? 'male' : 
+                    p.gender = (rawGender === 'M' || rawGender === 'MALE') ? 'male' :
                                (rawGender === 'F' || rawGender === 'FEMALE') ? 'female' : '';
                 }
-                
+
                 if (citizenship) {
                     p.citizenship = citizenship;
                 }
-                
+
                 p.docType = 'Загранпаспорт';
 
                 this.bookingForm.passengers_data.splice(targetIndex, 1, p);
@@ -967,12 +973,12 @@ export default {
                 for (const file of files) {
                     // 1. Compress the image
                     const compressedBase64 = await compressImage(file, { maxWidth: 1200, quality: 0.7 });
-                    
+
                     // 2. Upload directly to Cloudinary
-                    const result = await uploadToCloudinaryDirect(compressedBase64, { 
-                        uploadPreset: this.uploadPreset 
+                    const result = await uploadToCloudinaryDirect(compressedBase64, {
+                        uploadPreset: this.uploadPreset
                     });
-                    
+
                     // 3. Add to photos array
                     this.busForm.photos.push({
                         url: result.url,
@@ -1105,7 +1111,7 @@ export default {
                 const pData = b.passengers_data || [];
                 const ticket = this.tickets.find(t => t.id === b.bus_ticket_id);
                 const ticketInfo = ticket ? `${ticket.from_city} → ${ticket.to_city}` : '—';
-                
+
                 if (pData.length === 0) {
                     const lName = b.passenger_name || '';
                     if (lName.trim() && lName !== '—') {
@@ -1121,10 +1127,10 @@ export default {
                     }
                 } else {
                     pData.forEach((p, idx) => {
-                        const hasName = (p.lastName && p.lastName.trim() !== '—' && p.lastName.trim() !== '') || 
-                                        (p.firstName && p.firstName.trim() !== '—' && p.firstName.trim() !== '') || 
+                        const hasName = (p.lastName && p.lastName.trim() !== '—' && p.lastName.trim() !== '') ||
+                                        (p.firstName && p.firstName.trim() !== '—' && p.firstName.trim() !== '') ||
                                         (p.middleName && p.middleName.trim() !== '—' && p.middleName.trim() !== '');
-                        
+
                         if (hasName) {
                             manifest.push({
                                 ...p,
@@ -1172,7 +1178,7 @@ export default {
         visibleNavItems() {
             const role = this.user?.memberRole || this.user?.role;
             const isOwner = role === 'owner';
-            
+
             return this.navItems.filter(item => {
                 if (item.id === 'dashboard' || item.id === 'team' || item.id === 'activity') {
                     return isOwner;
@@ -1245,7 +1251,7 @@ watch: {
 
             // Reassign CRM customer data to the first remaining seat if their previous seat was deselected
             if (crmData && newPassengers.length > 0) {
-                const hasCrmCustomerSeated = newPassengers.some(p => 
+                const hasCrmCustomerSeated = newPassengers.some(p =>
                     (crmData.docNumber && p.docNumber === crmData.docNumber) ||
                     (crmData.phone && p.phone === crmData.phone) ||
                     (crmData.firstName && p.firstName === crmData.firstName)
@@ -1344,12 +1350,12 @@ watch: {
 
 <template>
      <div class="h-screen bg-slate-50 text-slate-800 flex overflow-hidden font-sans">
-        
+
         <!-- Auth Overlay -->
         <div v-if="!isAuthenticated" class="fixed inset-0 z-[100] bg-slate-50 flex items-center justify-center p-4 sm:p-6">
             <div class="max-w-md w-full bg-white p-6 sm:p-8 rounded-[32px] border border-slate-100 shadow-2xl text-center">
-                <AppLogo 
-                    :showText="false" 
+                <AppLogo
+                    :showText="false"
                     containerClass="mx-auto mb-6"
                     iconSizeClass="w-20 h-20"
                     iconClass="h-10 w-10"
@@ -1363,20 +1369,20 @@ watch: {
                     </svg>
                     <span>{{ authErrorMessage }}</span>
                 </div>
-                <input 
-                    v-model="phone" 
-                    type="tel" 
+                <input
+                    v-model="phone"
+                    type="tel"
                     placeholder="Номер телефона"
                     class="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-center text-lg focus:border-amber-500 text-slate-900 outline-none transition-all mb-4"
                 />
-                <input 
-                    v-model="password" 
-                    type="password" 
+                <input
+                    v-model="password"
+                    type="password"
                     placeholder="Пароль"
                     class="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-center text-lg focus:border-amber-500 text-slate-900 outline-none transition-all mb-6"
                     @keyup.enter="handleLogin"
                 />
-                <button 
+                <button
                     @click="handleLogin"
                     :disabled="loading"
                     class="w-full flex justify-center items-center bg-amber-500 hover:bg-amber-600 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50"
@@ -1391,8 +1397,8 @@ watch: {
             <!-- Mobile Header -->
             <div class="lg:hidden fixed top-0 inset-x-0 z-40 bg-white border-b border-slate-100 p-4 flex justify-between items-center shadow-sm">
                 <div class="flex items-center space-x-3">
-                <AppLogo 
-                    :showText="false" 
+                <AppLogo
+                    :showText="false"
                     iconSizeClass="w-8 h-8"
                     iconClass="h-5 w-5"
                     iconBgClass="bg-amber-500 text-white"
@@ -1410,14 +1416,14 @@ watch: {
             </div>
 
             <!-- Sidebar -->
-            <aside 
+            <aside
                 class="lg:w-72 bg-white border-r border-slate-100 flex flex-col pt-8 fixed lg:relative inset-y-0 left-0 z-30 transition-transform transform lg:translate-x-0 w-64 shadow-sm"
                 :class="mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'"
             >
                 <div class="px-8 mb-12">
                     <div class="flex items-center space-x-3">
-                    <AppLogo 
-                        :showText="false" 
+                    <AppLogo
+                        :showText="false"
                         iconSizeClass="w-10 h-10"
                         iconClass="h-6 w-6"
                         iconBgClass="bg-amber-500 text-white"
@@ -1429,8 +1435,8 @@ watch: {
                     </div>
                 </div>
 <br>                <nav class="flex-1 px-4 space-y-2 overflow-y-auto">
-                    <button 
-                        v-for="item in visibleNavItems" 
+                    <button
+                        v-for="item in visibleNavItems"
                         :key="item.id"
                         @click="activeTab = item.id; mobileMenuOpen = false; if(item.id !== 'create') { isEditingTicket = false; editingTicketId = null; }"
                         class="w-full px-4 py-3 rounded-xl flex items-center space-x-3 transition-all group"
@@ -1450,12 +1456,12 @@ watch: {
 
             <!-- Main Content -->
             <main class="flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6 lg:p-10 pt-20 lg:pt-10 w-full overflow-x-hidden">
-                
+
                 <!-- Boarding Section -->
                 <section v-if="activeTab === 'boarding'" class="space-y-6">
-                    <CarrierBoarding 
-                        :tickets="tickets" 
-                        :bookings="bookings" 
+                    <CarrierBoarding
+                        :tickets="tickets"
+                        :bookings="bookings"
                         :loading="loading"
                         @refresh="fetchBookings(); fetchTickets()"
                     />
@@ -1463,7 +1469,7 @@ watch: {
 
                 <!-- Dashboard Section -->
                 <section v-if="activeTab === 'dashboard'" class="space-y-6">
-                    <CarrierDashboard 
+                    <CarrierDashboard
                         @navigate="activeTab = $event"
                     />
                 </section>
@@ -1473,9 +1479,9 @@ watch: {
                 <section v-if="activeTab === 'tickets'" class="space-y-6 lg:space-y-8">
                     <div class="flex justify-between items-center">
                         <h2 class="text-2xl lg:text-3xl font-bold text-slate-900">Мои рейсы</h2>
-                        <button 
-                            v-if="ticketsState === 'network_error' || ticketsState === 'forbidden_error'" 
-                            @click="fetchTickets" 
+                        <button
+                            v-if="ticketsState === 'network_error' || ticketsState === 'forbidden_error'"
+                            @click="fetchTickets"
                             class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1535,7 +1541,7 @@ watch: {
                     <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         <div v-for="ticket in tickets" :key="ticket.id" class="bg-white rounded-3xl border border-slate-100 p-6 lg:p-8 flex flex-col justify-between shadow-sm overflow-hidden relative group transition-all hover:shadow-md">
                             <div class="absolute right-0 top-0 w-32 h-32 bg-amber-50 rounded-bl-[100px] -z-0 opacity-50"></div>
-                            
+
 
                             <div class="relative z-10">
                                 <div class="flex justify-between items-start mb-6">
@@ -1553,7 +1559,7 @@ watch: {
                                         <span v-if="ticket.status === 'completed'" class="bg-emerald-600 text-white text-[10px] uppercase font-black px-2 py-0.5 rounded-md">Завершен</span>
                                     </div>
                                 </div>
-    
+
                                 <div class="flex items-center justify-between mb-8 relative">
                                     <div class="absolute top-[40%] left-10 right-10 h-0.5 bg-slate-100 -translate-y-1/2 rounded-full hidden sm:block"></div>
                                     <div class="z-10 bg-white pr-4">
@@ -1569,12 +1575,12 @@ watch: {
                                     </div>
                                 </div>
                             </div>
-                            
+
                             <div class="flex flex-col sm:flex-row gap-4 justify-between sm:items-center pt-6 border-t border-slate-50 mt-auto">
                                 <div class="flex items-center space-x-2">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
                                     <span class="text-sm font-bold text-slate-400">
-                                        <span class="text-slate-900">{{ ticket.total_seats - ticket.reserved_seats.length }}</span> 
+                                        <span class="text-slate-900">{{ ticket.total_seats - ticket.reserved_seats.length }}</span>
                                         / {{ ticket.total_seats }} свободно
                                     </span>
                                 </div>
@@ -1609,9 +1615,9 @@ watch: {
 
                 <!-- Bookings section with Trip Financial Summary -->
                 <section v-if="activeTab === 'bookings'" class="space-y-6">
-                    <CarrierTripBookings 
-                        :tickets="tickets" 
-                        :bookings="bookings" 
+                    <CarrierTripBookings
+                        :tickets="tickets"
+                        :bookings="bookings"
                         :loading="loading"
                         :user="user"
                         @refresh="fetchBookings(); fetchTickets()"
@@ -1622,7 +1628,7 @@ watch: {
 
                 <!-- Finance Section -->
                 <section v-if="activeTab === 'finance'" class="space-y-6">
-                    <CarrierFinance 
+                    <CarrierFinance
                         :user="user"
                         @select-trip-bookings="(ticketId) => { activeTab = 'bookings'; }"
                     />
@@ -1635,14 +1641,14 @@ watch: {
 
                 <!-- Team Management Section -->
                 <section v-if="activeTab === 'team'" class="space-y-6">
-                    <CarrierMembers 
+                    <CarrierMembers
                         :user="user"
                         :tickets="tickets"
                     />
                 </section>
                 <!-- CRM section -->
                 <section v-if="activeTab === 'crm'" class="space-y-6">
-                    <CarrierCustomers 
+                    <CarrierCustomers
                         :user="user"
                         @quick-rebook="handleQuickRebook"
                     />
@@ -1650,7 +1656,7 @@ watch: {
 
                 <!-- Activity History Section -->
                 <section v-if="activeTab === 'activity'" class="space-y-6">
-                    <CarrierActivity 
+                    <CarrierActivity
                         :user="user"
                     />
                 </section>
@@ -1689,7 +1695,7 @@ watch: {
                         <div v-if="currentBookingTicket && !showManualForm" class="border-t border-slate-50 pt-6 mt-6">
                             <h3 class="text-lg font-bold text-slate-800 text-center mb-2">Схема салона</h3>
                             <p class="text-[11px] font-bold text-slate-400 text-center mb-6 uppercase tracking-widest">Дважды кликните по свободному месту для бронирования</p>
-                            <BusSeatSelector 
+                            <BusSeatSelector
                                 v-model="selectedManualSeats"
                                 @seat-dblclick="handleSeatDblClick"
                                 :bookedSeats="bookedSeatsForCurrentTicket"
@@ -1809,7 +1815,7 @@ watch: {
                 <!-- Create Bus Section -->
                 <section v-if="activeTab === 'create'" class="space-y-6 lg:space-y-8 text-slate-900">
                     <h2 class="text-2xl lg:text-3xl font-bold text-slate-900">{{ isEditingTicket ? 'Редактировать рейс' : 'Опубликовать новый рейс' }}</h2>
-                    
+
                     <div class="bg-white rounded-[32px] border border-slate-100 p-6 lg:p-8 shadow-sm space-y-8">
                         <!-- Fleet Bus Selector Section -->
                         <div class="space-y-4 pb-6 border-b border-slate-100">
@@ -1824,7 +1830,7 @@ watch: {
                                         Характеристики, схема мест и фотографии подставятся автоматически
                                     </p>
                                 </div>
-                                <button 
+                                <button
                                     type="button"
                                     @click="activeTab = 'fleet'"
                                     class="text-xs font-bold text-amber-600 hover:text-amber-700 inline-flex items-center gap-1 self-start sm:self-auto cursor-pointer"
@@ -1839,9 +1845,9 @@ watch: {
                                     <span class="text-lg">ℹ️</span>
                                     <span>В вашем автопарке пока нет активных автобусов. Вы можете создать рейс вручную или сначала добавить автобус в автопарк.</span>
                                 </div>
-                                <button 
-                                    type="button" 
-                                    @click="activeTab = 'fleet'" 
+                                <button
+                                    type="button"
+                                    @click="activeTab = 'fleet'"
                                     class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold whitespace-nowrap transition-all shadow-sm cursor-pointer"
                                 >
                                     + Добавить автобус
@@ -1851,8 +1857,8 @@ watch: {
                             <!-- If Fleet Has Active Buses -->
                             <div v-else class="space-y-4">
                                 <div class="relative">
-                                    <select 
-                                        v-model="selectedFleetBusId" 
+                                    <select
+                                        v-model="selectedFleetBusId"
                                         class="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-slate-900 font-bold text-sm outline-none focus:border-amber-500 appearance-none cursor-pointer shadow-inner"
                                     >
                                         <option v-if="!isEditingTicket || !editingOriginalBusId" value="">-- Выберите автобус из автопарка (или заполните вручную) --</option>
@@ -1871,10 +1877,10 @@ watch: {
                                     <div class="flex items-center gap-4">
                                         <!-- Thumbnail -->
                                         <div class="w-16 h-16 rounded-2xl overflow-hidden bg-slate-100 border border-amber-200 shrink-0 shadow-sm">
-                                            <img 
-                                                v-if="selectedFleetBus.photos && selectedFleetBus.photos.length > 0" 
-                                                :src="selectedFleetBus.photos.find(p=>p.is_main)?.url || selectedFleetBus.photos[0].url" 
-                                                class="w-full h-full object-cover" 
+                                            <img
+                                                v-if="selectedFleetBus.photos && selectedFleetBus.photos.length > 0"
+                                                :src="selectedFleetBus.photos.find(p=>p.is_main)?.url || selectedFleetBus.photos[0].url"
+                                                class="w-full h-full object-cover"
                                             />
                                             <div v-else class="w-full h-full flex items-center justify-center text-2xl">
                                                 🚌
@@ -1929,7 +1935,7 @@ watch: {
                             <!-- Company -->
                             <div class="space-y-2">
                                 <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Компания</label>
-                                <input v-model="busForm.transport_company" placeholder="Название перевозчика" 
+                                <input v-model="busForm.transport_company" placeholder="Название перевозчика"
                                     class="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-slate-900 outline-none focus:border-amber-500 transition-all shadow-inner"
                                     :class="{'border-red-500': busErrors.transport_company}" />
                                 <p v-if="busErrors.transport_company" class="text-[9px] text-red-500 ml-1">{{ busErrors.transport_company }}</p>
@@ -1948,7 +1954,7 @@ watch: {
                             <!-- From Address -->
                             <div class="space-y-2">
                                 <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Адрес отправления</label>
-                                <input v-model="busForm.from_address" placeholder="Точный адрес автовокзала" 
+                                <input v-model="busForm.from_address" placeholder="Точный адрес автовокзала"
                                     class="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-slate-900 outline-none focus:border-amber-500 transition-all shadow-inner"
                                     :class="{'border-red-500': busErrors.from_address}" />
                                 <p v-if="busErrors.from_address" class="text-[9px] text-red-500 ml-1">{{ busErrors.from_address }}</p>
@@ -1967,7 +1973,7 @@ watch: {
                             <!-- To Address -->
                             <div class="space-y-2">
                                 <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Адрес прибытия</label>
-                                <input v-model="busForm.to_address" placeholder="Точный адрес прибытия" 
+                                <input v-model="busForm.to_address" placeholder="Точный адрес прибытия"
                                     class="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-slate-900 outline-none focus:border-amber-500 transition-all shadow-inner"
                                     :class="{'border-red-500': busErrors.to_address}" />
                                 <p v-if="busErrors.to_address" class="text-[9px] text-red-500 ml-1">{{ busErrors.to_address }}</p>
@@ -2004,7 +2010,7 @@ watch: {
                             <!-- Price -->
                             <div class="space-y-2">
                                 <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Цена (с.)</label>
-                                <input v-model="busForm.price" type="number" placeholder="000.00" 
+                                <input v-model="busForm.price" type="number" placeholder="000.00"
                                     class="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-amber-600 font-bold text-xl outline-none focus:border-amber-500 transition-all shadow-inner" :class="{'border-red-500': busErrors.price}" />
                                 <p v-if="busErrors.price" class="text-[10px] text-red-500 mt-1 ml-1 font-bold">{{ busErrors.price }}</p>
                             </div>
@@ -2074,7 +2080,7 @@ watch: {
                             <!-- Premium Price (for double decker) -->
                             <div v-if="(selectedFleetBus && selectedFleetBus.bus_type === 'double') || (!selectedFleetBus && busForm.bus_type === 'double')" class="space-y-2">
                                 <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">★ Цена за Премиум-место (с.)</label>
-                                <input v-model="busForm.premium_price" type="number" placeholder="0 = нет премиума" 
+                                <input v-model="busForm.premium_price" type="number" placeholder="0 = нет премиума"
                                     class="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-slate-900 font-bold text-xl outline-none focus:border-amber-500 transition-all shadow-inner" />
                             </div>
                         </div>
@@ -2090,7 +2096,7 @@ watch: {
                                 </span>
                             </div>
                             <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100 max-w-sm mx-auto shadow-inner">
-                                <BusSeatSelector 
+                                <BusSeatSelector
                                     :bus-type="selectedFleetBus ? selectedFleetBus.bus_type : busForm.bus_type"
                                     :total-seats="Number(selectedFleetBus ? selectedFleetBus.total_seats : busForm.total_seats) || 53"
                                     :floor1-seats="Number(selectedFleetBus ? selectedFleetBus.floor1_seats : busForm.floor1_seats) || 20"
@@ -2147,17 +2153,61 @@ watch: {
                             </div>
                         </div>
 
+                        <!-- Section: Сопровождение рейса (Старший группы) -->
+                        <div class="space-y-4 pt-4 border-t border-slate-50">
+                            <div>
+                                <h3 class="text-sm font-bold text-slate-700 flex items-center gap-2">
+                                    <span>👤</span>
+                                    <span>Сопровождение рейса (Старший группы)</span>
+                                    <span class="text-[10px] text-slate-400 font-normal lowercase">(необязательно)</span>
+                                </h3>
+                                <p class="text-xs text-slate-400 mt-0.5">Данные ответственного лица будут автоматически отображаться в билетах пассажиров</p>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div class="space-y-2">
+                                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Старший группы / ответственный</label>
+                                    <input
+                                        v-model="busForm.group_leader_name"
+                                        type="text"
+                                        placeholder="Например: Хочи Абдурауф"
+                                        class="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-slate-900 outline-none focus:border-amber-400 text-xs shadow-sm"
+                                    />
+                                </div>
+
+                                <div class="space-y-2">
+                                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Телефон (Таджикистан)</label>
+                                    <input
+                                        v-model="busForm.group_leader_phone"
+                                        type="text"
+                                        placeholder="+992 XX XXX XX XX"
+                                        class="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-slate-900 outline-none focus:border-amber-400 text-xs font-mono shadow-sm"
+                                    />
+                                </div>
+
+                                <div class="space-y-2">
+                                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">WhatsApp (РФ / международный)</label>
+                                    <input
+                                        v-model="busForm.group_leader_whatsapp"
+                                        type="text"
+                                        placeholder="+7 XXX XXX XX XX"
+                                        class="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-slate-900 outline-none focus:border-amber-400 text-xs font-mono shadow-sm"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Terms Checkbox -->
                         <div class="pt-4 border-t border-slate-50 flex items-start gap-3">
-                            <input 
-                                type="checkbox" 
-                                id="accept_terms" 
-                                v-model="busForm.accept_terms" 
-                                class="mt-1 w-5 h-5 text-amber-500 rounded focus:ring-amber-500 border-gray-300" 
+                            <input
+                                type="checkbox"
+                                id="accept_terms"
+                                v-model="busForm.accept_terms"
+                                class="mt-1 w-5 h-5 text-amber-500 rounded focus:ring-amber-500 border-gray-300"
                             />
                             <div class="flex-1">
                                 <label for="accept_terms" class="text-sm text-slate-600">
-                                    Создавая поездку вы соглашаетесь с 
+                                    Создавая поездку вы соглашаетесь с
                                     <router-link to="/terms" class="text-blue-600 hover:text-blue-700 underline underline-offset-2">условиями использования и публичной офертой</router-link>.
                                 </label>
                                 <p v-if="busErrors.accept_terms" class="text-red-500 text-xs mt-1">{{ busErrors.accept_terms }}</p>
@@ -2166,8 +2216,8 @@ watch: {
 
                         <!-- Submit Button -->
                          <div class="flex justify-end pt-4">
-                             <button 
-                                @click="isEditingTicket ? updateBusTicket() : submitBusTicket()" 
+                             <button
+                                @click="isEditingTicket ? updateBusTicket() : submitBusTicket()"
                                 :disabled="loading"
                                 class="px-12 py-4 rounded-2xl bg-amber-500 text-slate-900 font-bold text-lg shadow-xl shadow-amber-500/20 hover:shadow-amber-500/40 hover:-translate-y-1 active:scale-95 transition-all flex items-center gap-3 disabled:opacity-50"
                             >
@@ -2206,9 +2256,9 @@ watch: {
                     <div class="space-y-1.5">
                         <label class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Web-ссылка (для браузера)</label>
                         <div class="flex gap-2">
-                            <input 
-                                readonly 
-                                :value="getShareUrl(selectedShareTicket, 'web')" 
+                            <input
+                                readonly
+                                :value="getShareUrl(selectedShareTicket, 'web')"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-600 truncate font-mono focus:outline-none"
                             />
                             <button @click="copyShareLink('web')" class="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-amber-500/20 shrink-0">
@@ -2221,9 +2271,9 @@ watch: {
                     <div class="space-y-1.5">
                         <label class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Telegram-ссылка (для бота)</label>
                         <div class="flex gap-2">
-                            <input 
-                                readonly 
-                                :value="getShareUrl(selectedShareTicket, 'telegram')" 
+                            <input
+                                readonly
+                                :value="getShareUrl(selectedShareTicket, 'telegram')"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-600 truncate font-mono focus:outline-none"
                             />
                             <button @click="copyShareLink('telegram')" class="px-4 py-2.5 bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-sky-500/20 shrink-0">

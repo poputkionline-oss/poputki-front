@@ -79,4 +79,28 @@ describe('TICKET MODULE V1.1 — FRONTEND UI TEST SUITE', () => {
         assert.ok(verifyVue.includes('БИЛЕТ ОТМЕНЕН'));
         assert.ok(verifyVue.includes('ПОЕЗДКА ЗАВЕРШЕНА'));
     });
+
+    it('9. BusAdminView.vue includes optional group leader fields in create/edit trip form', () => {
+        const busAdminVue = readFileSync(resolve('src/views/BusAdminView.vue'), 'utf-8');
+        assert.ok(busAdminVue.includes('group_leader_name'));
+        assert.ok(busAdminVue.includes('group_leader_phone'));
+        assert.ok(busAdminVue.includes('group_leader_whatsapp'));
+        assert.ok(busAdminVue.includes('Сопровождение рейса (Старший группы)'));
+        assert.ok(busAdminVue.includes('Старший группы / ответственный'));
+    });
+
+    it('10. PassengerTicket.vue renders real group leader data without hardcoded fallback phones', () => {
+        const ticketVue = readFileSync(resolve('src/components/ticket/PassengerTicket.vue'), 'utf-8');
+        assert.ok(ticketVue.includes('groupLeaderName'));
+        assert.ok(ticketVue.includes('groupLeaderPhone'));
+        assert.ok(ticketVue.includes('groupLeaderWhatsapp'));
+        assert.ok(ticketVue.includes('Будет назначен перед отправлением'));
+        assert.ok(!ticketVue.includes('+992 (92) 792 50 51')); // Hardcoded phone removed
+    });
+
+    it('11. CarrierTripBookings.vue displays assigned group leader badge in trip summary', () => {
+        const bookingsVue = readFileSync(resolve('src/components/carrier/CarrierTripBookings.vue'), 'utf-8');
+        assert.ok(bookingsVue.includes('selectedTicket.group_leader_name'));
+        assert.ok(bookingsVue.includes('Старший:'));
+    });
 });

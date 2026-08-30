@@ -70,8 +70,12 @@ export default {
                     paymentChannel: 'web'
                 },
                 carrier: {
-                    companyName: 'ООО «Рохи Абрешим»',
-                    operatorPhone: '+992 (92) 792 50 51'
+                    companyName: 'ООО «Рохи Абрешим»'
+                },
+                support: {
+                    name: 'Хочи Абдурауф',
+                    phone: '+992 (92) 792 50 51',
+                    whatsapp: '+7 (912) 912 50 51'
                 }
             }
         };

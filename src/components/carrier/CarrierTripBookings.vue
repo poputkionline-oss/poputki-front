@@ -474,8 +474,11 @@ export default {
                         <h3 class="text-xl sm:text-2xl font-bold">
                             {{ selectedTicket.from_city }} → {{ selectedTicket.to_city }}
                         </h3>
-                        <p class="text-xs text-slate-400 mt-1">
-                            📅 {{ formatDate(selectedTicket.departure_date) }} в {{ formatTime(selectedTicket.departure_time) }} • Тариф: {{ selectedTicket.price }} сомони
+                        <p class="text-xs text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
+                            <span>📅 {{ formatDate(selectedTicket.departure_date) }} в {{ formatTime(selectedTicket.departure_time) }} • Тариф: {{ selectedTicket.price }} сомони</span>
+                            <span v-if="selectedTicket.group_leader_name" class="inline-flex items-center gap-1 text-amber-300 font-semibold bg-amber-400/10 px-2 py-0.5 rounded-lg border border-amber-400/20">
+                                <span>👤</span> <span>Старший: {{ selectedTicket.group_leader_name }}</span>
+                            </span>
                         </p>
                     </div>
                     <!-- Quick Occupancy Gauge -->

@@ -43,8 +43,17 @@ export default {
             const mid = this.intermediateDisplay;
             return mid ? `${from} — ${mid} — ${to}` : `${from} — ${to}`;
         },
-        carrierPhone() {
-            return this.ticket?.carrier?.operatorPhone || '+992 (92) 792 50 51';
+        groupLeaderName() {
+            return this.ticket?.support?.name || '';
+        },
+        groupLeaderPhone() {
+            return this.ticket?.support?.phone || '';
+        },
+        groupLeaderWhatsapp() {
+            return this.ticket?.support?.whatsapp || '';
+        },
+        samePhoneAndWhatsapp() {
+            return this.groupLeaderPhone && this.groupLeaderWhatsapp && (this.groupLeaderPhone === this.groupLeaderWhatsapp);
         },
         activeAmenities() {
             const a = this.ticket?.bus?.amenities;
@@ -145,7 +154,7 @@ export default {
                                 </div>
                                 <span class="text-slate-300 font-normal">|</span>
                                 <div class="flex items-center gap-1">
-                                    <span class="text-slate-400">№</span>
+                                    <span class="text-slate-400">🎫</span>
                                     <span>Билет № <strong class="text-slate-900 font-mono font-bold">{{ ticket?.ticketNumber || 'POP-000000' }}</strong></span>
                                 </div>
                             </div>
@@ -327,38 +336,55 @@ export default {
                             СЛУЖБА СОПРОВОЖДЕНИЯ
                         </div>
 
-                        <!-- Carrier / Senior Contact -->
+                        <!-- Leader Name or Fallback -->
                         <div class="flex items-start gap-1.5 pt-0.5">
                             <span class="text-slate-800 text-xs mt-0.5">👤</span>
                             <div>
                                 <div class="text-[8.5px] font-black uppercase text-slate-500">СТАРШИЙ ГРУППЫ НА РЕЙСЕ:</div>
-                                <div class="text-[11px] font-bold text-slate-800 leading-snug">
-                                    {{ ticket?.carrier?.companyName || 'Ответственный диспетчер' }}
+                                <div v-if="groupLeaderName" class="text-[11px] font-bold text-slate-900 leading-snug">
+                                    {{ groupLeaderName }}
+                                </div>
+                                <div v-else class="text-[11px] font-semibold text-slate-500 italic leading-snug">
+                                    Будет назначен перед отправлением
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Phone -->
-                        <div class="flex items-start gap-1.5">
-                            <span class="text-slate-800 text-xs mt-0.5">📞</span>
-                            <div>
-                                <div class="text-[8.5px] font-black uppercase text-slate-500">ТЕЛЕФОН:</div>
-                                <div class="text-xs font-bold text-slate-900 font-mono">
-                                    {{ carrierPhone }}
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- WhatsApp -->
-                        <div class="flex items-start gap-1.5">
+                        <!-- If Phone and WhatsApp are identical -->
+                        <div v-if="samePhoneAndWhatsapp" class="flex items-start gap-1.5">
                             <span class="text-emerald-600 text-xs mt-0.5">💬</span>
                             <div>
                                 <div class="text-[8.5px] font-black uppercase text-slate-500">ТЕЛЕФОН / WHATSAPP:</div>
                                 <div class="text-xs font-bold text-slate-900 font-mono">
-                                    {{ carrierPhone }}
+                                    {{ groupLeaderPhone }}
                                 </div>
                             </div>
                         </div>
+
+                        <!-- If Phone and WhatsApp are different -->
+                        <template v-else>
+                            <!-- Phone -->
+                            <div v-if="groupLeaderPhone" class="flex items-start gap-1.5">
+                                <span class="text-slate-800 text-xs mt-0.5">📞</span>
+                                <div>
+                                    <div class="text-[8.5px] font-black uppercase text-slate-500">ТЕЛЕФОН:</div>
+                                    <div class="text-xs font-bold text-slate-900 font-mono">
+                                        {{ groupLeaderPhone }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- WhatsApp -->
+                            <div v-if="groupLeaderWhatsapp" class="flex items-start gap-1.5">
+                                <span class="text-emerald-600 text-xs mt-0.5">💬</span>
+                                <div>
+                                    <div class="text-[8.5px] font-black uppercase text-slate-500">WHATSAPP:</div>
+                                    <div class="text-xs font-bold text-slate-900 font-mono">
+                                        {{ groupLeaderWhatsapp }}
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
 
                         <div class="text-[8.5px] text-slate-500 italic leading-tight pt-0.5">
                             (Обращайтесь по вопросам посадки, прохождения границы и остановок в пути)
