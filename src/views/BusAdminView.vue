@@ -147,6 +147,7 @@ export default {
             bookingForm: {
                 bus_ticket_id: '',
                 passenger_count: 1,
+                contact_role: 'unknown',
                 passengers_data: [
                         { lastName: '', firstName: '', middleName: '', gender: 'male', docType: 'Загранпаспорт', docNumber: '', birthDate: '', citizenship: 'Таджикистан', phone: '', seatNumber: '' }
                 ],
@@ -932,6 +933,8 @@ export default {
                 // Auto-copy contact info from first passenger
                 const firstP = f.passengers_data[0];
                 const contactName = `${firstP.lastName} ${firstP.firstName}`.trim();
+                const rawPhone = firstP.phone ? String(firstP.phone).trim() : '';
+                const cleanPhone = (rawPhone && rawPhone !== '—' && rawPhone !== '-') ? rawPhone : null;
 
                 await api.post('/bus-admin/bookings/manual', {
                     bus_ticket_id: f.bus_ticket_id,
@@ -939,7 +942,8 @@ export default {
                     passenger_name: contactName,
                     seat_numbers: assignedSeats,
                     passengers_data: f.passengers_data,
-                    phone: firstP.phone || '—',
+                    phone: cleanPhone,
+                    contact_role: f.contact_role || 'unknown',
                     pickup_city: f.pickup_city,
                     drop_off_city: f.drop_off_city
                 });
@@ -952,6 +956,7 @@ export default {
                 this.bookingForm = {
                     bus_ticket_id: '',
                     passenger_count: 1,
+                    contact_role: 'unknown',
                     passengers_data: [{ lastName: '', firstName: '', middleName: '', gender: 'male', docType: 'Загранпаспорт', docNumber: '', birthDate: '', citizenship: 'Таджикистан', phone: '', seatNumber: '' }],
                     pickup_city: '',
                     drop_off_city: '',
@@ -961,7 +966,7 @@ export default {
                 this.activeTab = 'bookings';
                 this.fetchBookings();
             } catch (e) {
-                alert(e.response?.data?.error || 'Ошибка при бронировании');
+                alert(e.response?.data?.message || e.response?.data?.error || 'Ошибка при бронировании');
             } finally { this.loading = false; }
         },
         async handlePhotoUpload(event) {
@@ -1792,9 +1797,35 @@ watch: {
                                         <label class="text-[9px] text-slate-400 font-bold uppercase ml-1">Гражданство</label>
                                         <input v-model="p.citizenship" placeholder="Таджикистан" class="w-full bg-white border border-slate-100 rounded-xl p-3 text-sm text-slate-900 outline-none focus:border-amber-500 shadow-sm" />
                                     </div>
+                                </div>
+
+                                <!-- Contact Details & Role Section -->
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-3 border-t border-slate-200/60">
                                     <div class="space-y-1">
-                                        <label class="text-[9px] text-slate-400 font-bold uppercase ml-1">Телефон пассажира</label>
-                                        <input v-model="p.phone" placeholder="+992..." class="w-full bg-white border border-slate-100 rounded-xl p-3 text-sm text-slate-900 outline-none focus:border-amber-500 shadow-sm" />
+                                        <label class="text-[9px] text-slate-500 font-black uppercase ml-1">Телефон для связи (необязательно)</label>
+                                        <input v-model="p.phone" placeholder="+992 92 123 4567" class="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm text-slate-900 outline-none focus:border-amber-500 shadow-sm font-mono" />
+                                        <p class="text-[10px] text-slate-400 ml-1">Международный формат (+992, +7, +998) или оставьте пустым</p>
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="text-[9px] text-slate-500 font-black uppercase ml-1">Контакт принадлежит</label>
+                                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 bg-white border border-slate-200 rounded-xl p-2 text-xs text-slate-700 shadow-sm">
+                                            <label class="flex items-center gap-1.5 cursor-pointer font-medium p-1 rounded hover:bg-slate-50">
+                                                <input type="radio" value="passenger" v-model="bookingForm.contact_role" class="text-amber-500 focus:ring-amber-500" />
+                                                <span class="truncate">Пассажиру</span>
+                                            </label>
+                                            <label class="flex items-center gap-1.5 cursor-pointer font-medium p-1 rounded hover:bg-slate-50">
+                                                <input type="radio" value="family_or_group" v-model="bookingForm.contact_role" class="text-amber-500 focus:ring-amber-500" />
+                                                <span class="truncate">Семье / группе</span>
+                                            </label>
+                                            <label class="flex items-center gap-1.5 cursor-pointer font-medium p-1 rounded hover:bg-slate-50">
+                                                <input type="radio" value="coordinator" v-model="bookingForm.contact_role" class="text-amber-500 focus:ring-amber-500" />
+                                                <span class="truncate">Посреднику</span>
+                                            </label>
+                                            <label class="flex items-center gap-1.5 cursor-pointer font-medium p-1 rounded hover:bg-slate-50">
+                                                <input type="radio" value="unknown" v-model="bookingForm.contact_role" class="text-amber-500 focus:ring-amber-500" />
+                                                <span class="truncate">Не знаю</span>
+                                            </label>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
