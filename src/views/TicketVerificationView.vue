@@ -62,9 +62,29 @@ export default {
             if (!dateStr) return '—';
             try {
                 const d = new Date(dateStr);
-                return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-            } catch {
+                return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            } catch (e) {
                 return dateStr;
+            }
+        },
+        async startClaimSession() {
+            if (this.claiming) return;
+            this.claiming = true;
+            this.claimError = null;
+            try {
+                const token = this.$route.params.token;
+                const bookingId = this.ticket?.bookingId;
+                const res = await api.post('/claims/start-session', {
+                    ticketVerificationToken: token,
+                    bookingId
+                });
+                if (res.data?.deepLink) {
+                    window.location.href = res.data.deepLink;
+                }
+            } catch (err) {
+                this.claimError = err.response?.data?.error || 'Не удалось сформировать ссылку для Telegram';
+            } finally {
+                this.claiming = false;
             }
         }
     },
@@ -183,6 +203,32 @@ export default {
                         </div>
                         <div v-if="ticket.bus?.license_plate" class="font-mono font-bold bg-white px-2 py-1 rounded border border-slate-300">
                             {{ ticket.bus?.license_plate }}
+                        </div>
+                    </div>
+
+                    <!-- Passenger Telegram Access CTA -->
+                    <div v-if="ticket.claimStatus !== 'claimed'" class="p-5 bg-sky-50 rounded-2xl border border-sky-200 text-center space-y-3">
+                        <div class="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-sky-200 rounded-full text-[11px] font-bold text-sky-800">
+                            <span>POPUTKI.ONLINE</span>
+                            <span>•</span>
+                            <span>Официальный бот: @Poputkionline_bot</span>
+                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed">
+                            Подключите Telegram, чтобы получать уведомления об изменениях рейса и сохранить билет в боте.
+                        </p>
+                        <button
+                            @click="startClaimSession"
+                            :disabled="claiming"
+                            class="w-full py-3.5 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                        >
+                            <span v-if="claiming" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                            <span v-else>✈ Открыть билет в Telegram</span>
+                        </button>
+                        <div class="text-[10px] text-slate-400">
+                            Билет действителен для посадки и без подключения Telegram.
+                        </div>
+                        <div v-if="claimError" class="text-[11px] font-bold text-rose-600">
+                            {{ claimError }}
                         </div>
                     </div>
 
