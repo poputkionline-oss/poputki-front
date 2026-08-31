@@ -1,5 +1,6 @@
 <script>
 import { generateQRCodeSVG } from '../../utils/qrCode.js';
+import api from '../../api';
 
 export default {
     name: 'PassengerTicket',
@@ -18,6 +19,12 @@ export default {
         }
     },
     emits: ['close'],
+    data() {
+        return {
+            openingTelegram: false,
+            telegramError: ''
+        };
+    },
     computed: {
         qrSvg() {
             if (!this.ticket?.verificationUrl) return '';
@@ -62,6 +69,16 @@ export default {
         },
         hasAnyAmenities() {
             return this.activeAmenities.length > 0;
+        },
+        canOpenTelegram() {
+            return Boolean(
+                this.ticket?.bookingId &&
+                this.ticket?.verificationToken &&
+                this.ticket?.status === 'confirmed' &&
+                this.ticket?.isManual &&
+                !this.ticket?.isClaimed &&
+                this.ticket?.claimStatus !== 'claimed'
+            );
         }
     },
     methods: {
@@ -75,6 +92,32 @@ export default {
                 return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
             } catch {
                 return dateStr;
+            }
+        },
+        async openTicketInTelegram() {
+            if (!this.canOpenTelegram || this.openingTelegram) return;
+
+            this.openingTelegram = true;
+            this.telegramError = '';
+            try {
+                const response = await api.post('/claims/start-session', {
+                    bookingId: this.ticket.bookingId,
+                    ticketVerificationToken: this.ticket.verificationToken
+                });
+
+                const deepLink = response.data?.deepLink;
+                if (!deepLink || typeof deepLink !== 'string' || !deepLink.startsWith('https://t.me/')) {
+                    throw new Error('Сервис не вернул безопасную ссылку Telegram');
+                }
+
+                // Same-tab navigation is the most reliable way for mobile browsers
+                // to hand a t.me deep-link to the Telegram app after the API call.
+                window.location.assign(deepLink);
+            } catch (err) {
+                console.error('[PassengerTicket] Telegram bridge failed:', err);
+                this.telegramError = err.response?.data?.error || err.message || 'Не удалось открыть Telegram. Попробуйте ещё раз.';
+            } finally {
+                this.openingTelegram = false;
             }
         }
     }
@@ -91,6 +134,19 @@ export default {
                 <span class="text-xs text-slate-300">• Электронный пассажирский билет</span>
             </div>
             <div class="flex items-center gap-2">
+                <div v-if="canOpenTelegram" class="flex flex-col items-end gap-1">
+                    <button
+                        @click="openTicketInTelegram"
+                        :disabled="openingTelegram"
+                        class="px-4 py-1.5 bg-sky-500 hover:bg-sky-400 disabled:opacity-70 disabled:cursor-wait text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
+                    >
+                        <span>{{ openingTelegram ? '⏳' : '✈️' }}</span>
+                        <span>{{ openingTelegram ? 'Открываю Telegram…' : 'Открыть билет в Telegram' }}</span>
+                    </button>
+                    <span v-if="telegramError" class="max-w-[260px] text-[10px] leading-tight text-rose-200 text-right">
+                        {{ telegramError }}
+                    </span>
+                </div>
                 <button
                     @click="printTicket"
                     class="px-4 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
