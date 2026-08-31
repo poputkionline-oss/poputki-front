@@ -22,7 +22,8 @@ export default {
     data() {
         return {
             openingTelegram: false,
-            telegramError: ''
+            telegramError: '',
+            telegramDeepLink: ''
         };
     },
     computed: {
@@ -95,7 +96,12 @@ export default {
             }
         },
         async openTicketInTelegram() {
-            if (!this.canOpenTelegram || this.openingTelegram) return;
+            if (!this.canOpenTelegram) return;
+            // A link fetched on a previous tap is reused as-is: the actual
+            // navigation must happen on a fresh, synchronous tap (native <a href>)
+            // for iOS Safari to honor the Telegram universal link. Re-running the
+            // request here would also create a redundant claim session.
+            if (this.telegramDeepLink || this.openingTelegram) return;
 
             this.openingTelegram = true;
             this.telegramError = '';
@@ -110,11 +116,8 @@ export default {
                     throw new Error('Сервис не вернул безопасную ссылку Telegram');
                 }
 
-                // Same-tab navigation is the most reliable way for mobile browsers
-                // to hand a t.me deep-link to the Telegram app after the API call.
-                window.location.assign(deepLink);
+                this.telegramDeepLink = deepLink;
             } catch (err) {
-                console.error('[PassengerTicket] Telegram bridge failed:', err);
                 this.telegramError = err.response?.data?.error || err.message || 'Не удалось открыть Telegram. Попробуйте ещё раз.';
             } finally {
                 this.openingTelegram = false;
@@ -135,14 +138,26 @@ export default {
             </div>
             <div class="flex items-center gap-2">
                 <div v-if="canOpenTelegram" class="flex flex-col items-end gap-1">
+                    <a
+                        v-if="telegramDeepLink"
+                        :href="telegramDeepLink"
+                        class="px-4 py-1.5 bg-sky-500 hover:bg-sky-400 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
+                    >
+                        <span>✈️</span>
+                        <span>Открыть Telegram</span>
+                    </a>
                     <button
+                        v-else
                         @click="openTicketInTelegram"
                         :disabled="openingTelegram"
                         class="px-4 py-1.5 bg-sky-500 hover:bg-sky-400 disabled:opacity-70 disabled:cursor-wait text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
                     >
                         <span>{{ openingTelegram ? '⏳' : '✈️' }}</span>
-                        <span>{{ openingTelegram ? 'Открываю Telegram…' : 'Открыть билет в Telegram' }}</span>
+                        <span>{{ openingTelegram ? 'Подготавливаем Telegram…' : 'Открыть билет в Telegram' }}</span>
                     </button>
+                    <span v-if="telegramDeepLink" class="max-w-[260px] text-[10px] leading-tight text-sky-100 text-right">
+                        Ссылка готова. Нажмите ещё раз, чтобы открыть Telegram.
+                    </span>
                     <span v-if="telegramError" class="max-w-[260px] text-[10px] leading-tight text-rose-200 text-right">
                         {{ telegramError }}
                     </span>

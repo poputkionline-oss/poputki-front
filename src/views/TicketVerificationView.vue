@@ -8,7 +8,10 @@ export default {
             token: this.$route.params.token || '',
             loading: true,
             error: null,
-            ticket: null
+            ticket: null,
+            claiming: false,
+            claimError: null,
+            telegramDeepLink: null
         };
     },
     computed: {
@@ -68,7 +71,11 @@ export default {
             }
         },
         async startClaimSession() {
-            if (this.claiming) return;
+            // A link fetched on a previous tap is reused as-is: the actual
+            // navigation must happen on a fresh, synchronous tap (native <a href>)
+            // for iOS Safari to honor the Telegram universal link. Re-running the
+            // request here would also create a redundant claim session.
+            if (this.telegramDeepLink || this.claiming) return;
             this.claiming = true;
             this.claimError = null;
             try {
@@ -78,11 +85,13 @@ export default {
                     ticketVerificationToken: token,
                     bookingId
                 });
-                if (res.data?.deepLink) {
-                    window.location.href = res.data.deepLink;
+                const deepLink = res.data?.deepLink;
+                if (typeof deepLink !== 'string' || !deepLink.startsWith('https://t.me/')) {
+                    throw new Error('INVALID_TELEGRAM_LINK');
                 }
+                this.telegramDeepLink = deepLink;
             } catch (err) {
-                this.claimError = err.response?.data?.error || 'Не удалось сформировать ссылку для Telegram';
+                this.claimError = err.response?.data?.error || 'Не удалось подготовить Telegram. Попробуйте ещё раз.';
             } finally {
                 this.claiming = false;
             }
@@ -216,14 +225,25 @@ export default {
                         <p class="text-xs text-slate-600 leading-relaxed">
                             Подключите Telegram, чтобы получать уведомления об изменениях рейса и сохранить билет в боте.
                         </p>
-                        <button
-                            @click="startClaimSession"
-                            :disabled="claiming"
+                        <a
+                            v-if="telegramDeepLink"
+                            :href="telegramDeepLink"
                             class="w-full py-3.5 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
                         >
+                            <span>✈️ Открыть Telegram</span>
+                        </a>
+                        <button
+                            v-else
+                            @click="startClaimSession"
+                            :disabled="claiming"
+                            class="w-full py-3.5 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-wait"
+                        >
                             <span v-if="claiming" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                            <span v-else>✈ Открыть билет в Telegram</span>
+                            <span>{{ claiming ? 'Подготавливаем Telegram…' : '✈️ Открыть билет в Telegram' }}</span>
                         </button>
+                        <div v-if="telegramDeepLink" class="text-[11px] font-semibold text-sky-700">
+                            Ссылка готова. Нажмите ещё раз, чтобы открыть Telegram.
+                        </div>
                         <div class="text-[10px] text-slate-400">
                             Билет действителен для посадки и без подключения Telegram.
                         </div>
