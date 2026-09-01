@@ -2,7 +2,7 @@
 import api from '../api';
 import AppModal from '../components/AppModal.vue';
 import AppLogo from '../components/AppLogo.vue';
-import { getTelegramUser, getTelegramInitData } from '../telegram';
+import { getTelegramUser, getTelegramInitData, ensureTelegramMiniAppAuth } from '../telegram';
 
 export default {
   components: {
@@ -61,39 +61,23 @@ export default {
   },
   methods: {
     async syncTelegram() {
-      if (!this.tgUser) return;
+      if (!this.tgUser && !window.Telegram?.WebApp) return;
 
-      const user = JSON.parse(localStorage.getItem('user') || 'null');
-      console.log('[AuthView] Syncing Telegram user:', this.tgUser.first_name, 'ID:', this.tgUser.id);
       this.loading = true;
-
       try {
-        const res = await api.post('/auth/telegram-miniapp', {
-          initData: getTelegramInitData(),
-          userId: user?.id
-        });
-
-        console.log('[AuthView] Telegram miniapp sync response:', res.data);
-
-        if (res.data.user) {
-          const syncedUser = res.data.user;
-          const token = res.data.token || ('mock-token-' + syncedUser.id);
-          localStorage.setItem('user', JSON.stringify(syncedUser));
-          localStorage.setItem('token', token);
-
+        const syncedUser = await ensureTelegramMiniAppAuth();
+        if (syncedUser && typeof syncedUser === 'object') {
+          const token = localStorage.getItem('token') || ('mock-token-' + syncedUser.id);
           if (syncedUser.name) {
-            console.log('[AuthView] Seamless Telegram login complete, navigating');
             this.completeAuth(syncedUser, token);
             return;
           }
-
-          if (this.step === 2) {
-             this.registration.id = syncedUser.id;
-             this.registration.name = syncedUser.name || this.tgName || '';
-          }
+          this.registration.id = syncedUser.id;
+          this.registration.name = syncedUser.name || this.tgName || '';
+          this.step = 2;
         }
       } catch (e) {
-        console.error("[AuthView] Telegram sync error:", e);
+        console.error('[AuthView] Telegram sync error:', e);
       } finally {
         this.loading = false;
       }

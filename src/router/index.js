@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import LandingView from '../views/LandingView.vue'
 import RideSeatSelectionView from '../views/RideSeatSelectionView.vue';
 import BusAdminView from '../views/BusAdminView.vue';
-import { getTelegramUser, getTelegramInitData } from '../telegram';
+import { getTelegramApp, getTelegramUser, getTelegramInitData, ensureTelegramMiniAppAuth } from '../telegram';
 
 const router = createRouter({
     history: createWebHistory(import.meta.env.BASE_URL),
@@ -143,12 +143,29 @@ function isProfileComplete(user) {
 }
 
 router.beforeEach(async (to, from, next) => {
-    const tg = window.Telegram?.WebApp;
-    const tgUser = getTelegramUser();
+    // 1. Telegram Auth / Seamless Sync logic (Must run & await BEFORE navigation decisions if in Telegram WebApp)
+    const tgApp = getTelegramApp();
+    if (tgApp || window.Telegram?.WebApp) {
+        let user = JSON.parse(localStorage.getItem('user') || 'null');
+        const token = localStorage.getItem('token');
+
+        if (!token || !isProfileComplete(user)) {
+            const syncedUser = await ensureTelegramMiniAppAuth();
+            if (syncedUser && isProfileComplete(syncedUser) && to.name === 'auth') {
+                const target = to.query.redirect || { name: 'my-bus-tickets' };
+                return next(target);
+            }
+        } else {
+            // Background sync
+            ensureTelegramMiniAppAuth();
+        }
+    }
+
+    const tg = getTelegramApp();
     let user = JSON.parse(localStorage.getItem('user'));
     const token = localStorage.getItem('token');
 
-    // 1. Handle Deep Links (Telegram startParam)
+    // 2. Handle Deep Links (Telegram startParam)
     if (tg?.initDataUnsafe?.start_param && !to.query.processedStartParam) {
         const startParam = tg.initDataUnsafe.start_param;
         if (startParam.startsWith('ride_')) {
@@ -192,48 +209,6 @@ router.beforeEach(async (to, from, next) => {
                     });
                 }
             }
-        }
-    }
-
-    // 2. Telegram Auth / Seamless Sync logic
-    if (tgUser) {
-        const syncAction = async () => {
-            try {
-                const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/auth/telegram-miniapp`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-mana-man': 'nasa.2006'
-                    },
-                    body: JSON.stringify({
-                        initData: getTelegramInitData(),
-                        userId: user?.id
-                    })
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.token) localStorage.setItem('token', data.token);
-                    if (data.user) localStorage.setItem('user', JSON.stringify(data.user));
-                    user = data.user;
-                    return data.user;
-                }
-            } catch (error) {
-                console.error("Background Telegram Sync Failure:", error);
-            }
-            return null;
-        };
-
-        // BLOCKING SYNC: If no token or profile name missing, wait for server
-        if (!token || !isProfileComplete(user)) {
-            const syncedUser = await syncAction();
-            if (syncedUser && isProfileComplete(syncedUser) && to.name === 'auth') {
-                const target = to.query.redirect || { name: 'my-bus-tickets' };
-                return next(target);
-            }
-        } else {
-            // Background sync
-            syncAction();
         }
     }
 
