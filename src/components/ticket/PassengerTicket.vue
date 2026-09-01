@@ -220,23 +220,23 @@ export default {
             <div class="ticket-inner-box border-[2px] border-amber-500 rounded-[16px] p-3.5 sm:p-4 bg-white relative print:p-3.5 print:rounded-[12px]">
 
                 <!-- COMPACT TOP HEADER: LOGO + BRAND + TITLE + RIGHT QR CARD -->
-                <div class="flex items-start justify-between gap-3 pb-2 border-b border-amber-400/50">
+                <div class="flex flex-col sm:flex-row items-start justify-between gap-3 pb-2 border-b border-amber-400/50 relative">
 
                     <!-- Left: Header + Title (Compact Vertical Spacing) -->
-                    <div class="space-y-1 min-w-0">
-                        <div class="flex items-center gap-3">
+                    <div class="space-y-1 min-w-0 flex-1 w-full sm:w-auto">
+                        <div class="flex items-center gap-2.5 sm:gap-3">
                             <!-- Official Brand Logo Asset -->
                             <img
                                 src="../../assets/logo-itself.png"
                                 alt="POPUTKI.ONLINE Logo"
-                                class="w-12 h-12 sm:w-14 sm:h-14 object-contain shrink-0"
+                                class="w-10 h-10 sm:w-14 sm:h-14 object-contain shrink-0"
                             />
 
                             <div>
-                                <div class="text-2xl sm:text-[28px] font-black tracking-tight text-slate-900 leading-none">
+                                <div class="text-xl sm:text-[28px] font-black tracking-tight text-slate-900 leading-none">
                                     POPUTKI.ONLINE
                                 </div>
-                                <div class="text-[9.5px] sm:text-[10.5px] font-bold text-slate-600 tracking-[0.22em] uppercase mt-0.5">
+                                <div class="text-[8.5px] sm:text-[10.5px] font-bold text-slate-600 tracking-[0.2em] uppercase mt-0.5">
                                     ПОЕЗДКИ С ДОВЕРИЕМ
                                 </div>
                             </div>
@@ -244,20 +244,20 @@ export default {
 
                         <!-- Document Title directly below Header -->
                         <div class="pt-1">
-                            <h1 class="text-base sm:text-lg font-black text-slate-900 tracking-wide uppercase leading-tight">
+                            <h1 class="text-sm sm:text-lg font-black text-slate-900 tracking-wide uppercase leading-tight">
                                 ЭЛЕКТРОННЫЙ БИЛЕТ / МАРШРУТНЫЙ ЛИСТ
                             </h1>
-                            <div class="flex items-center gap-2.5 sm:gap-3 text-[9.5px] sm:text-[10.5px] text-slate-600 font-semibold mt-0.5 flex-wrap">
+                            <div class="flex items-center gap-2 sm:gap-3 text-[9px] sm:text-[10.5px] text-slate-600 font-semibold mt-0.5 flex-wrap">
                                 <div class="flex items-center gap-1">
                                     <span class="text-slate-400">🌐</span>
                                     <span>Оформлено через: <strong class="text-amber-600 font-bold">POPUTKI.ONLINE</strong></span>
                                 </div>
-                                <span class="text-slate-300 font-normal">|</span>
+                                <span class="hidden sm:inline text-slate-300 font-normal">|</span>
                                 <div class="flex items-center gap-1">
                                     <span class="text-slate-400">🏢</span>
                                     <span>Перевозчик: <strong class="text-slate-900 font-bold">{{ ticket?.carrier?.companyName || 'ООО «Рохи Абрешим»' }}</strong></span>
                                 </div>
-                                <span class="text-slate-300 font-normal">|</span>
+                                <span class="hidden sm:inline text-slate-300 font-normal">|</span>
                                 <div class="flex items-center gap-1">
                                     <span class="text-slate-400">🎫</span>
                                     <span>Билет № <strong class="text-slate-900 font-mono font-bold">{{ ticket?.ticketNumber || 'POP-000000' }}</strong></span>
@@ -266,12 +266,12 @@ export default {
                         </div>
                     </div>
 
-                    <!-- Right: Verification QR Card (Compact & Correct Caption) -->
-                    <div class="border-[2px] border-amber-500 rounded-xl p-1.5 bg-white flex flex-col items-center justify-center text-center shrink-0 w-28 sm:w-32 shadow-sm">
+                    <!-- Right: Verification QR Card (Compact & Dedicated Container) -->
+                    <div class="qr-container border-[2px] border-amber-500 rounded-xl p-1.5 bg-white flex flex-col items-center justify-center text-center shrink-0 self-end sm:self-start w-28 sm:w-32 shadow-sm print:w-28 print:shrink-0">
                         <div class="text-[8px] sm:text-[8.5px] font-black text-amber-600 uppercase tracking-tight leading-tight mb-0.5 text-center">
                             ПРОВЕРИТЬ<br/>ПОДЛИННОСТЬ БИЛЕТА
                         </div>
-                        <div class="w-16 h-16 sm:w-20 sm:h-20 flex items-center justify-center" v-html="qrSvg"></div>
+                        <div class="w-16 h-16 sm:w-20 sm:h-20 flex items-center justify-center overflow-hidden" v-html="qrSvg"></div>
                         <div class="text-[8px] font-black text-slate-800 tracking-wider mt-0.5 uppercase font-mono">
                             POPUTKI.ONLINE
                         </div>
