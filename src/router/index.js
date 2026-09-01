@@ -150,18 +150,10 @@ router.beforeEach(async (to, from, next) => {
     );
 
     if (isTelegramContext) {
-        let user = JSON.parse(localStorage.getItem('user') || 'null');
-        const token = localStorage.getItem('token');
-
-        if (!token || !isProfileComplete(user)) {
-            const syncedUser = await ensureTelegramMiniAppAuth();
-            if (syncedUser && isProfileComplete(syncedUser) && to.name === 'auth') {
-                const target = to.query.redirect || { name: 'my-bus-tickets' };
-                return next(target);
-            }
-        } else {
-            // Background sync
-            ensureTelegramMiniAppAuth();
+        const syncedUser = await ensureTelegramMiniAppAuth();
+        if (syncedUser && isProfileComplete(syncedUser) && to.name === 'auth') {
+            const target = to.query.redirect || { name: 'my-bus-tickets' };
+            return next(target);
         }
     }
 
