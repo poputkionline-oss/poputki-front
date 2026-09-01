@@ -65,38 +65,37 @@ export default {
 
       const user = JSON.parse(localStorage.getItem('user') || 'null');
       console.log('[AuthView] Syncing Telegram user:', this.tgUser.first_name, 'ID:', this.tgUser.id);
+      this.loading = true;
 
       try {
-        const res = await api.post('/auth/telegram-login', {
-          id: this.tgUser.id,
-          first_name: this.tgUser.first_name,
-          last_name: this.tgUser.last_name,
-          username: this.tgUser.username,
-          photo_url: this.tgUser.photo_url,
-          userId: user?.id, // Pass existing ID to link if available
-          initData: getTelegramInitData() // Send raw string for backend verification
+        const res = await api.post('/auth/telegram-miniapp', {
+          initData: getTelegramInitData(),
+          userId: user?.id
         });
 
-        console.log('[AuthView] Telegram sync response:', res.data);
+        console.log('[AuthView] Telegram miniapp sync response:', res.data);
 
         if (res.data.user) {
-          localStorage.setItem('user', JSON.stringify(res.data.user));
-          if (res.data.token) localStorage.setItem('token', res.data.token);
-          console.log('[AuthView] Telegram user synced:', res.data.user.id);
+          const syncedUser = res.data.user;
+          const token = res.data.token || ('mock-token-' + syncedUser.id);
+          localStorage.setItem('user', JSON.stringify(syncedUser));
+          localStorage.setItem('token', token);
 
-          // Re-update registration if we are in step 2
+          if (syncedUser.name) {
+            console.log('[AuthView] Seamless Telegram login complete, navigating');
+            this.completeAuth(syncedUser, token);
+            return;
+          }
+
           if (this.step === 2) {
-             this.registration.id = res.data.user.id;
-             this.registration.name = res.data.user.fullName || this.registration.name;
+             this.registration.id = syncedUser.id;
+             this.registration.name = syncedUser.name || this.tgName || '';
           }
         }
       } catch (e) {
-        console.error("[AuthView] Telegram sync error:", {
-          message: e.message,
-          status: e.response?.status,
-          data: e.response?.data,
-          fullError: e
-        });
+        console.error("[AuthView] Telegram sync error:", e);
+      } finally {
+        this.loading = false;
       }
     },
     showAlert(title, message, type = 'info') {
@@ -152,8 +151,8 @@ export default {
           isNew: user.isNew
         });
 
-        if (user.isNew || !user.name || !user.age || user.age <= 0) {
-            console.log('[AuthView] User needs profile completion. isNew:', user.isNew);
+        if (user.isNew || !user.name) {
+            console.log('[AuthView] User needs profile name completion.');
             this.registration.id = user.id;
             this.registration.phone = user.phone || '';
             this.step = 2;
@@ -186,8 +185,8 @@ export default {
       }
     },
     async handleRegister() {
-        if (!this.registration.name || !this.registration.age || (this.needsPhone && !this.registration.phone)) {
-            this.showAlert('Заполните поля', 'Пожалуйста, заполните все обязательные поля', 'warning');
+        if (!this.registration.name || (this.needsPhone && !this.registration.phone)) {
+            this.showAlert('Заполните поля', 'Пожалуйста, укажите ваше имя', 'warning');
             return;
         }
 
@@ -208,7 +207,7 @@ export default {
 
         this.loading = true;
         try {
-            const payload = { ...this.registration, phone: cleanedPhone };
+            const payload = { ...this.registration, phone: cleanedPhone, age: parseInt(this.registration.age) || null };
             const res = await api.post('/auth/register', payload);
             const token = localStorage.getItem('token') || ('mock-token-' + res.data.user.id);
             this.completeAuth(res.data.user, token);
@@ -232,6 +231,8 @@ export default {
 
         if (user.role === 'bus_driver') {
             this.$router.push({ name: 'bus-admin' });
+        } else if (this.tgUser || user.telegram_id) {
+            this.$router.push({ name: 'my-bus-tickets' });
         } else {
             this.$router.push({ name: 'search' });
         }

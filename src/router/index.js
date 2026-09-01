@@ -139,7 +139,7 @@ const router = createRouter({
 })
 
 function isProfileComplete(user) {
-    return user && user.phone && user.name && user.age && parseInt(user.age) > 0;
+    return Boolean(user && user.name);
 }
 
 router.beforeEach(async (to, from, next) => {
@@ -195,29 +195,27 @@ router.beforeEach(async (to, from, next) => {
         }
     }
 
-    // 2. Telegram Auth / Sync logic
+    // 2. Telegram Auth / Seamless Sync logic
     if (tgUser) {
         const syncAction = async () => {
             try {
-                const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/auth/telegram-login`, {
+                const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/auth/telegram-miniapp`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-mana-man': 'nasa.2006'
+                    },
                     body: JSON.stringify({
-                        id: tgUser.id,
-                        first_name: tgUser.first_name,
-                        last_name: tgUser.last_name,
-                        username: tgUser.username,
-                        photo_url: tgUser.photo_url,
-                        userId: user?.id,
-                        initData: getTelegramInitData()
+                        initData: getTelegramInitData(),
+                        userId: user?.id
                     })
                 });
 
                 if (response.ok) {
                     const data = await response.json();
-                    localStorage.setItem('token', data.token);
-                    localStorage.setItem('user', JSON.stringify(data.user));
-                    user = data.user; // Update local reference
+                    if (data.token) localStorage.setItem('token', data.token);
+                    if (data.user) localStorage.setItem('user', JSON.stringify(data.user));
+                    user = data.user;
                     return data.user;
                 }
             } catch (error) {
@@ -226,14 +224,15 @@ router.beforeEach(async (to, from, next) => {
             return null;
         };
 
-        // BLOCKING SYNC: If no token or profile is incomplete, we MUST wait for the server.
+        // BLOCKING SYNC: If no token or profile name missing, wait for server
         if (!token || !isProfileComplete(user)) {
             const syncedUser = await syncAction();
-            if (syncedUser && syncedUser.isNew && to.name !== 'auth') {
-                return next({ name: 'auth', query: { tg_complete: 1 } });
+            if (syncedUser && isProfileComplete(syncedUser) && to.name === 'auth') {
+                const target = to.query.redirect || { name: 'my-bus-tickets' };
+                return next(target);
             }
         } else {
-            // FIRE AND FORGET: Profile is complete, just sync in background.
+            // Background sync
             syncAction();
         }
     }
