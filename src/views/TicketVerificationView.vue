@@ -36,7 +36,15 @@ export default {
             return this.ticket.statusLabel || 'НЕИЗВЕСТНЫЙ СТАТУС';
         },
         isClaimedTicket() {
-            return Boolean(this.ticket?.isClaimed || this.ticket?.claimStatus === 'claimed');
+            if (!this.ticket) return false;
+            return Boolean(
+                this.ticket.isClaimed ||
+                this.ticket.is_claimed ||
+                this.ticket.claimStatus === 'claimed' ||
+                this.ticket.claim_status === 'claimed' ||
+                this.ticket.claimedByUserId ||
+                this.ticket.claimed_by_user_id
+            );
         },
         miniAppUrl() {
             return 'https://t.me/Poputkionline_bot?startapp';
