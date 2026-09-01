@@ -31,11 +31,24 @@ export default {
     computed: {
         upcoming() {
             const now = new Date().toISOString().split('T')[0];
-            return this.bookings.filter(b => b.departure_date >= now);
+            const list = this.bookings.filter(b => {
+                if (!b.departure_date) return true;
+                const depDate = String(b.departure_date).split('T')[0];
+                return depDate >= now;
+            });
+            if (list.length === 0 && this.bookings.length > 0) {
+                const pastList = this.bookings.filter(b => b.departure_date && String(b.departure_date).split('T')[0] < now);
+                if (pastList.length === 0) return this.bookings;
+            }
+            return list;
         },
         past() {
             const now = new Date().toISOString().split('T')[0];
-            return this.bookings.filter(b => b.departure_date < now);
+            return this.bookings.filter(b => {
+                if (!b.departure_date) return false;
+                const depDate = String(b.departure_date).split('T')[0];
+                return depDate < now;
+            });
         }
     },
     methods: {
@@ -49,9 +62,11 @@ export default {
                 }
                 this.user = freshUser;
                 const res = await api.get(`/users/${freshUser.id}/bus-bookings`);
-                this.bookings = res.data;
+                const data = Array.isArray(res.data) ? res.data : (res.data?.bookings || []);
+                this.bookings = data;
             } catch (e) {
                 console.error(e);
+                this.bookings = [];
             } finally {
                 this.loading = false;
             }
