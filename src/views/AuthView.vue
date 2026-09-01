@@ -61,7 +61,11 @@ export default {
   },
   methods: {
     async syncTelegram() {
-      if (!this.tgUser && !window.Telegram?.WebApp) return;
+      const isTelegramContext = Boolean(
+        this.tgUser ||
+        (typeof window !== 'undefined' && (window.Telegram?.WebApp || window.location?.hash?.includes('tgWebAppData')))
+      );
+      if (!isTelegramContext) return;
 
       this.loading = true;
       try {
@@ -232,7 +236,11 @@ export default {
     <div class="absolute -bottom-32 -left-32 w-64 h-64 bg-orange-400 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
 
     <div class="flex-1 flex flex-col justify-center p-8 relative z-10">
-      <div v-if="step === 1">
+      <div v-if="loading" class="flex flex-col items-center justify-center py-12 text-center">
+        <div class="w-12 h-12 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p class="text-slate-700 font-medium text-lg">Входим через Telegram...</p>
+      </div>
+      <div v-else-if="step === 1">
         <div class="mb-8">
            <AppLogo 
               :showText="false" 

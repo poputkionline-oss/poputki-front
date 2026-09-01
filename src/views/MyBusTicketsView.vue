@@ -42,7 +42,13 @@ export default {
         async fetchBookings() {
             this.loading = true;
             try {
-                const res = await api.get(`/users/${this.user.id}/bus-bookings`);
+                const freshUser = JSON.parse(localStorage.getItem('user') || 'null') || this.user;
+                if (!freshUser?.id) {
+                    this.bookings = [];
+                    return;
+                }
+                this.user = freshUser;
+                const res = await api.get(`/users/${freshUser.id}/bus-bookings`);
                 this.bookings = res.data;
             } catch (e) {
                 console.error(e);
@@ -149,7 +155,13 @@ export default {
         }
     },
     async mounted() {
-        if (!this.user) { this.$router.push('/auth'); return; }
+        const freshUser = JSON.parse(localStorage.getItem('user') || 'null') || this.user;
+        if (freshUser) {
+            this.user = freshUser;
+        } else {
+            this.$router.push('/auth');
+            return;
+        }
         if (this.$route.query.booked === 'true') {
             this.showSuccessBanner = true;
             setTimeout(() => { this.showSuccessBanner = false; }, 5000);

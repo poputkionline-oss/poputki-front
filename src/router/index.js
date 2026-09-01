@@ -144,8 +144,12 @@ function isProfileComplete(user) {
 
 router.beforeEach(async (to, from, next) => {
     // 1. Telegram Auth / Seamless Sync logic (Must run & await BEFORE navigation decisions if in Telegram WebApp)
-    const tgApp = getTelegramApp();
-    if (tgApp || window.Telegram?.WebApp) {
+    const isTelegramContext = Boolean(
+        getTelegramApp() ||
+        (typeof window !== 'undefined' && (window.Telegram?.WebApp || window.location?.hash?.includes('tgWebAppData')))
+    );
+
+    if (isTelegramContext) {
         let user = JSON.parse(localStorage.getItem('user') || 'null');
         const token = localStorage.getItem('token');
 
