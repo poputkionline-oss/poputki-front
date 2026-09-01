@@ -37,29 +37,60 @@ let tgAuthPromise = null;
 
 /**
  * Ensures Telegram Mini App seamless authentication runs BEFORE router decisions.
- * Safely waits for SDK readiness, fetches initData, posts to /auth/telegram-miniapp,
- * and updates localStorage session token/user without logging sensitive initData.
+ * Safely waits for SDK readiness, fetches initData (with polling and hash fallback),
+ * posts to /auth/telegram-miniapp, and updates localStorage session token/user
+ * without logging sensitive initData.
  */
 export async function ensureTelegramMiniAppAuth() {
     if (tgAuthPromise) return tgAuthPromise;
 
     tgAuthPromise = (async () => {
         let tg = getTelegramApp();
-        if (!tg && typeof window !== 'undefined') {
+        let initData = getTelegramInitData();
+        let attempt = 1;
+
+        // 1. Poll up to 500ms for Telegram.WebApp SDK readiness and initData population
+        if (typeof window !== 'undefined') {
             for (let i = 0; i < 10; i++) {
+                if (tg && initData) break;
                 await new Promise(r => setTimeout(r, 50));
+                attempt = i + 2;
                 tg = getTelegramApp();
-                if (tg) break;
+                initData = getTelegramInitData();
             }
         }
 
-        if (!tg) return false;
+        // 2. Fallback: Parse tgWebAppData from location.hash if Telegram SDK hasn't attached initData yet
+        if (!initData && typeof window !== 'undefined' && window.location?.hash) {
+            try {
+                const hashParams = new URLSearchParams(window.location.hash.substring(1));
+                const rawTgData = hashParams.get('tgWebAppData');
+                if (rawTgData) {
+                    initData = rawTgData;
+                }
+            } catch (e) {}
+        }
 
-        try {
-            tg.ready();
-        } catch (e) {}
+        let readyCalled = false;
+        if (tg) {
+            try {
+                tg.ready();
+                readyCalled = true;
+            } catch (e) {}
+        }
 
-        const initData = getTelegramInitData();
+        // 3. Safe Diagnostic Instrumentation (NO PII, NO raw initData logged)
+        if (typeof console !== 'undefined' && console.log) {
+            console.log('[TelegramBootstrap]', {
+                webAppPresent: Boolean(tg),
+                initDataPresent: Boolean(initData),
+                initDataLength: initData ? initData.length : 0,
+                readyCalled,
+                attempt,
+                authRequestStarted: Boolean(initData)
+            });
+        }
+
         if (!initData) {
             return false;
         }
