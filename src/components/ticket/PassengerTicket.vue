@@ -71,6 +71,12 @@ export default {
         hasAnyAmenities() {
             return this.activeAmenities.length > 0;
         },
+        isClaimedTicket() {
+            return Boolean(this.ticket?.isClaimed || this.ticket?.claimStatus === 'claimed');
+        },
+        miniAppUrl() {
+            return 'https://t.me/Poputkionline_bot?startapp';
+        },
         canOpenTelegram() {
             return Boolean(
                 this.ticket?.bookingId &&
@@ -95,7 +101,15 @@ export default {
                 return dateStr;
             }
         },
+        handleOpenMiniApp(e) {
+            if (window.Telegram?.WebApp) {
+                e.preventDefault();
+                this.$router.push({ name: 'my-bus-tickets' });
+            }
+        },
         async openTicketInTelegram() {
+            // REGRESSION GUARD: Never call start-session for an already claimed ticket
+            if (this.isClaimedTicket) return;
             if (!this.canOpenTelegram) return;
             // A link fetched on a previous tap is reused as-is: the actual
             // navigation must happen on a fresh, synchronous tap (native <a href>)
@@ -137,6 +151,18 @@ export default {
                 <span class="text-xs text-slate-300">• Электронный пассажирский билет</span>
             </div>
             <div class="flex items-center gap-2">
+                <!-- Claimed Ticket Action -->
+                <div v-if="isClaimedTicket">
+                    <a
+                        :href="miniAppUrl"
+                        @click="handleOpenMiniApp"
+                        class="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
+                    >
+                        <span>📱</span>
+                        <span>Открыть мои поездки</span>
+                    </a>
+                </div>
+                <!-- Unclaimed Ticket Action -->
                 <div v-if="canOpenTelegram" class="flex flex-col items-end gap-1">
                     <a
                         v-if="telegramDeepLink"

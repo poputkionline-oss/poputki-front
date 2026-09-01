@@ -34,6 +34,12 @@ export default {
             if (this.ticket.status === 'pending_payment') return 'ОЖИДАЕТ ОПЛАТЫ';
             if (this.ticket.status === 'cancelled') return 'БИЛЕТ ОТМЕНЕН';
             return this.ticket.statusLabel || 'НЕИЗВЕСТНЫЙ СТАТУС';
+        },
+        isClaimedTicket() {
+            return Boolean(this.ticket?.isClaimed || this.ticket?.claimStatus === 'claimed');
+        },
+        miniAppUrl() {
+            return 'https://t.me/Poputkionline_bot?startapp';
         }
     },
     methods: {
@@ -70,7 +76,15 @@ export default {
                 return dateStr;
             }
         },
+        handleOpenMiniApp(e) {
+            if (window.Telegram?.WebApp) {
+                e.preventDefault();
+                this.$router.push({ name: 'my-bus-tickets' });
+            }
+        },
         async startClaimSession() {
+            // REGRESSION GUARD: Never call start-session for an already claimed ticket
+            if (this.isClaimedTicket) return;
             // A link fetched on a previous tap is reused as-is: the actual
             // navigation must happen on a fresh, synchronous tap (native <a href>)
             // for iOS Safari to honor the Telegram universal link. Re-running the
@@ -215,8 +229,8 @@ export default {
                         </div>
                     </div>
 
-                    <!-- Passenger Telegram Access CTA -->
-                    <div v-if="ticket.claimStatus !== 'claimed'" class="p-5 bg-sky-50 rounded-2xl border border-sky-200 text-center space-y-3">
+                    <!-- Passenger Telegram Access CTA (Unclaimed vs Claimed) -->
+                    <div v-if="!isClaimedTicket" class="p-5 bg-sky-50 rounded-2xl border border-sky-200 text-center space-y-3">
                         <div class="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-sky-200 rounded-full text-[11px] font-bold text-sky-800">
                             <span>POPUTKI.ONLINE</span>
                             <span>•</span>
@@ -250,6 +264,23 @@ export default {
                         <div v-if="claimError" class="text-[11px] font-bold text-rose-600">
                             {{ claimError }}
                         </div>
+                    </div>
+
+                    <!-- Claimed Ticket Block -->
+                    <div v-else class="p-5 bg-emerald-50 rounded-2xl border border-emerald-200 text-center space-y-3">
+                        <div class="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-emerald-200 rounded-full text-[11px] font-bold text-emerald-800">
+                            <span>✅ Билет подтвержден в Telegram</span>
+                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed">
+                            Поездка привязана к вашему аккаунту Telegram. Вы можете просмотреть её в ваших поездках.
+                        </p>
+                        <a
+                            :href="miniAppUrl"
+                            @click="handleOpenMiniApp"
+                            class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                        >
+                            <span>📱 Открыть мои поездки</span>
+                        </a>
                     </div>
 
                     <!-- Disclaimer -->
