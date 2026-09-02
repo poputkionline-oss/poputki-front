@@ -280,4 +280,68 @@ describe('PHASE E.43 — SMS FALLBACK + TRANSPORT MESSAGE HARDENING', () => {
         assert.ok(!smsUrl.includes('%F0%9F')); // No 4-byte emoji encoding in SMS
     });
 
+    // --- SECTION 9: CANONICAL ROUTE PRECEDENCE (E.43.3) ---
+
+    it('10. Official trip route takes precedence over passenger pickup/dropoff points', () => {
+        // Real production booking #448 situation:
+        // Trip 73: Нижневартовск (РФ) → Канибадам (TJ)
+        // Passenger pickup / dropoff: Б. Гафуров / Б. Гафуров
+        const booking448 = {
+            id: 448,
+            bus_ticket_id: 73,
+            pickup_city: 'Б. Гафуров',
+            drop_off_city: 'Б. Гафуров',
+            seat_numbers: [8],
+            passenger_phone: '+992 92 792 50 51'
+        };
+
+        const trip73 = {
+            id: 73,
+            from_city: 'Нижневартовск (РФ)',
+            to_city: 'Канибадам (TJ)',
+            departure_date: '2026-09-16'
+        };
+
+        // Extraction logic simulates BusAdminView.openHandoffForBooking:
+        const fromCity = trip73.from_city || booking448.pickup_city || '—';
+        const toCity = trip73.to_city || booking448.drop_off_city || '—';
+
+        assert.strictEqual(fromCity, 'Нижневартовск (РФ)');
+        assert.strictEqual(toCity, 'Канибадам (TJ)');
+        assert.notStrictEqual(fromCity, 'Б. Гафуров');
+        assert.notStrictEqual(toCity, 'Б. Гафуров');
+
+        const waMsg = formatWhatsAppHandoffMessage({
+            role: 'passenger',
+            name: 'Абдуллоев Акмалхон',
+            fromCity,
+            toCity,
+            departureDate: '16.09.2026',
+            seats: '8',
+            ticketUrl: 'https://www.poputki.online/ticket-verify/448-bde80c8fc4e62bb31ef3ab12ad282d1e'
+        });
+
+        const smsMsg = formatSmsHandoffMessage({
+            role: 'passenger',
+            fromCity,
+            toCity,
+            departureDate: '16.09.2026',
+            seats: '8',
+            ticketUrl: 'https://www.poputki.online/ticket-verify/448-bde80c8fc4e62bb31ef3ab12ad282d1e'
+        });
+
+        // WhatsApp checks
+        assert.ok(waMsg.includes('Маршрут: Нижневартовск (РФ) - Канибадам (TJ)'));
+        assert.ok(!waMsg.includes('Б. Гафуров - Б. Гафуров'));
+
+        // SMS checks
+        assert.ok(smsMsg.includes('Нижневартовск (РФ) - Канибадам (TJ)'));
+        assert.ok(!smsMsg.includes('Б. Гафуров - Б. Гафуров'));
+
+        // Source code inspection in BusAdminView: ensure ticket.from_city comes first
+        const freshSource = fs.readFileSync(busAdminPath, 'utf8');
+        assert.ok(freshSource.includes('const fromCity = ticket?.from_city ||'));
+        assert.ok(freshSource.includes('const toCity = ticket?.to_city ||'));
+    });
+
 });

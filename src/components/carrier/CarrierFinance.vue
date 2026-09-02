@@ -85,7 +85,15 @@ export default {
             }
         }
     },
+    mounted() {
+        if (!this.financeData && !this.loading) {
+            this.fetchFinance();
+        }
+    },
     methods: {
+        refresh() {
+            return this.fetchFinance();
+        },
         setPreset(preset) {
             this.periodPreset = preset;
             if (preset === 'custom' && !this.customFrom) {

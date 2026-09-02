@@ -97,6 +97,7 @@ export default {
             stats: null,
             tickets: [],
             bookings: [],
+            financeRefreshKey: 0,
             cities: [],
             busForm: {
                 transport_company: '',
@@ -786,6 +787,11 @@ export default {
                 alert('Бронирование удалено');
                 // Refetch BOTH bookings and tickets so seat occupancy and metadata refresh immediately
                 await Promise.all([this.fetchBookings(), this.fetchTickets()]);
+                // Invalidate finance state immediately
+                this.financeRefreshKey = Date.now();
+                if (this.$refs.carrierFinance?.fetchFinance) {
+                    this.$refs.carrierFinance.fetchFinance();
+                }
             } catch (e) {
                 alert('Ошибка при удалении: ' + (e.response?.data?.error || e.message));
             } finally {
@@ -984,8 +990,8 @@ export default {
                     const h = res.data.handoff;
                     const tId = f.bus_ticket_id;
                     const ticket = (this.tickets || []).find(t => t.id == tId);
-                    const fromCity = f.pickup_city || ticket?.from_city || '—';
-                    const toCity = f.drop_off_city || ticket?.to_city || '—';
+                    const fromCity = ticket?.from_city || f.from_city || f.pickup_city || '—';
+                    const toCity = ticket?.to_city || f.to_city || f.drop_off_city || '—';
                     const depDate = ticket?.departure_date ? this.formatDate(ticket.departure_date) : '—';
                     const seatStr = f.passengers_data.map(p => p.seatNumber).filter(Boolean).join(', ');
 
@@ -1006,6 +1012,8 @@ export default {
                         trip: {
                             fromCity: fromCity,
                             toCity: toCity,
+                            pickupCity: f.pickup_city || null,
+                            dropOffCity: f.drop_off_city || null,
                             departureDate: depDate,
                             seats: seatStr
                         },
@@ -1173,9 +1181,9 @@ export default {
 
             const tId = b.bus_ticket_id || p.bus_ticket_id || (p.originalBooking && p.originalBooking.bus_ticket_id);
             const ticket = (this.tickets || []).find(t => t.id == tId);
-            const fromCity = p.pickupCity || b.pickup_city || ticket?.from_city || '—';
-            const toCity = p.dropOffCity || b.drop_off_city || ticket?.to_city || '—';
-            const depDate = ticket?.departure_date ? this.formatDate(ticket.departure_date) : '—';
+            const fromCity = ticket?.from_city || p.tripFromCity || b.from_city || '—';
+            const toCity = ticket?.to_city || p.tripToCity || b.to_city || '—';
+            const depDate = ticket?.departure_date ? this.formatDate(ticket.departure_date) : (p.departureDate ? this.formatDate(p.departureDate) : '—');
             const contactPhone = p.phone || b.passenger_phone || b.phone || (passengers[0] && passengers[0].phone) || '';
             const seatStr = passengers.map(ps => ps.seat).filter(Boolean).join(', ') || p.seat || '—';
 
@@ -1192,6 +1200,8 @@ export default {
                 trip: {
                     fromCity: fromCity,
                     toCity: toCity,
+                    pickupCity: p.pickupCity || b.pickup_city || null,
+                    dropOffCity: p.dropOffCity || b.drop_off_city || null,
                     departureDate: depDate,
                     seats: seatStr
                 },
@@ -1747,6 +1757,9 @@ watch: {
                     this.showManualForm = false;
                 }
             }
+            if (newTab === 'finance') {
+                this.financeRefreshKey = Date.now();
+            }
             this.fetchData();
         }
     }
@@ -2021,6 +2034,7 @@ watch: {
                 <!-- Bookings section with Trip Financial Summary -->
                 <section v-if="activeTab === 'bookings'" class="space-y-6">
                     <CarrierTripBookings
+                        ref="carrierTripBookings"
                         :tickets="tickets"
                         :bookings="bookings"
                         :loading="loading"
@@ -2035,6 +2049,8 @@ watch: {
                 <!-- Finance Section -->
                 <section v-if="activeTab === 'finance'" class="space-y-6">
                     <CarrierFinance
+                        ref="carrierFinance"
+                        :key="financeRefreshKey"
                         :user="user"
                         @select-trip-bookings="(ticketId) => { activeTab = 'bookings'; }"
                     />

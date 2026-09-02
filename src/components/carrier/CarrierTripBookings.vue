@@ -119,6 +119,8 @@ export default {
                         docNumber: '—',
                         citizenship: '—',
                         phone: b.passenger_phone || b.phone || '',
+                        tripFromCity: this.selectedTicket?.from_city || '—',
+                        tripToCity: this.selectedTicket?.to_city || '—',
                         pickupCity: b.pickup_city || this.selectedTicket?.from_city || '—',
                         dropOffCity: b.drop_off_city || this.selectedTicket?.to_city || '—',
                         totalPrice: this.isDriver ? null : totalPrice,
@@ -165,6 +167,8 @@ export default {
                             docNumber: p.docNumber || '—',
                             citizenship: p.citizenship || '—',
                             phone: pPhone,
+                            tripFromCity: this.selectedTicket?.from_city || '—',
+                            tripToCity: this.selectedTicket?.to_city || '—',
                             pickupCity: b.pickup_city || this.selectedTicket?.from_city || '—',
                             dropOffCity: b.drop_off_city || this.selectedTicket?.to_city || '—',
                             totalPrice: this.isDriver ? null : singlePrice,
@@ -273,9 +277,23 @@ export default {
             if (newId) {
                 this.fetchTripSummary(newId);
             }
+        },
+        bookings: {
+            deep: true,
+            handler() {
+                if (this.selectedTicketId) {
+                    this.fetchTripSummary(this.selectedTicketId);
+                }
+            }
         }
     },
     methods: {
+        handleRefresh() {
+            if (this.selectedTicketId) {
+                this.fetchTripSummary(this.selectedTicketId);
+            }
+            this.$emit('refresh');
+        },
         selectTicket(ticketId) {
             this.selectedTicketId = ticketId;
             this.sourceFilter = 'all';
@@ -437,7 +455,7 @@ export default {
                     >
                         <span>📊</span> <span>Экспорт в Excel</span>
                     </button>
-                    <button @click="$emit('refresh')" class="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-100 text-slate-600 active:scale-95 transition-all text-xs font-semibold">
+                    <button @click="handleRefresh" class="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-100 text-slate-600 active:scale-95 transition-all text-xs font-semibold" title="Обновить список и финансы">
                         <span>↻</span>
                     </button>
                 </div>
