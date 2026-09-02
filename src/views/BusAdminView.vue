@@ -1117,6 +1117,69 @@ export default {
                 window.open(this.handoffModal.ticketUrl, '_blank');
             }
         },
+        async openHandoffForBooking(p) {
+            const bookingId = p.bookingId || p.id;
+            if (!bookingId) return;
+
+            const b = p.originalBooking || p;
+            const role = b.contact_role || p.contactRole || 'passenger';
+
+            let passengers = [];
+            if (b.passengers_data && Array.isArray(b.passengers_data) && b.passengers_data.length > 0) {
+                passengers = b.passengers_data.map(pd => ({
+                    name: `${pd.lastName || ''} ${pd.firstName || ''}`.trim() || pd.name || p.name,
+                    seat: pd.seatNumber || pd.seat || p.seat,
+                    phone: pd.phone || p.phone
+                }));
+            } else {
+                passengers = [{
+                    name: p.name || b.passenger_name || 'Пассажир',
+                    seat: p.seat || (b.seat_numbers && b.seat_numbers[0]) || '—',
+                    phone: p.phone || b.phone || ''
+                }];
+            }
+
+            this.handoffModal = {
+                show: true,
+                isExisting: true,
+                role: role,
+                bookingId: bookingId,
+                ticketUrl: '',
+                claimUrl: '',
+                expiresAt: null,
+                isClaimed: false,
+                passengers: passengers,
+                copyFeedback: '',
+                regenerating: true,
+                regenerationError: ''
+            };
+
+            try {
+                const res = await api.post(`/bus-admin/bookings/${bookingId}/claim-link`);
+                if (res.data) {
+                    this.handoffModal.ticketUrl = res.data.ticket_url || '';
+                    this.handoffModal.claimUrl = res.data.claim_url || '';
+                    this.handoffModal.expiresAt = res.data.expires_at || null;
+                    this.handoffModal.isClaimed = false;
+                }
+            } catch (err) {
+                if (err.response?.status === 409) {
+                    this.handoffModal.isClaimed = true;
+                    this.handoffModal.regenerationError = 'Поездка уже подтверждена пассажиром';
+                    if (b) {
+                        b.claim_status = 'claimed';
+                    }
+                } else if (err.response?.status === 400 && err.response?.data?.error === 'BOOKING_CANCELLED') {
+                    this.handoffModal.regenerationError = 'Нельзя создать ссылку для отмененного бронирования';
+                } else if (err.response?.status === 403) {
+                    this.handoffModal.regenerationError = 'Доступ запрещен: рейс не принадлежит вашему аккаунту перевозчика';
+                } else {
+                    this.handoffModal.regenerationError = 'Не удалось создать ссылку для передачи билета. Попробуйте ещё раз.';
+                }
+            } finally {
+                this.handoffModal.regenerating = false;
+            }
+        },
         async regenerateHandoffClaimLink() {
             if (!this.handoffModal.bookingId) return;
             this.handoffModal.regenerating = true;
@@ -1804,6 +1867,7 @@ watch: {
                         @refresh="fetchBookings(); fetchTickets()"
                         @edit-booking="initEditBooking"
                         @delete-booking="deleteBooking"
+                        @open-handoff="openHandoffForBooking"
                     />
                 </section>
 
@@ -2560,7 +2624,7 @@ watch: {
                         🎫
                     </div>
                     <div>
-                        <h3 class="text-xl font-black text-slate-900">Бронь создана</h3>
+                        <h3 class="text-xl font-black text-slate-900">{{ handoffModal.isExisting ? 'Передать билет' : 'Бронь создана' }}</h3>
                         <p class="text-xs text-slate-400">Бронирование #{{ handoffModal.bookingId }}</p>
                     </div>
                 </div>
@@ -2568,6 +2632,12 @@ watch: {
                 <!-- Role Instruction Banner -->
                 <div class="p-4 rounded-2xl bg-amber-50/80 border border-amber-200/60 text-xs font-medium text-amber-900 leading-relaxed">
                     {{ getHandoffRoleMessage(handoffModal.role) }}
+                </div>
+
+                <!-- Loading State while generating link for existing booking -->
+                <div v-if="handoffModal.regenerating && !handoffModal.ticketUrl" class="py-8 text-center space-y-3">
+                    <div class="w-8 h-8 border-3 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                    <div class="text-xs font-bold text-slate-500">Генерация ссылки для передачи...</div>
                 </div>
 
                 <!-- Passenger Summary Card -->
@@ -2599,7 +2669,7 @@ watch: {
                 </div>
 
                 <!-- Actions List -->
-                <div class="space-y-3 pt-2">
+                <div v-if="!handoffModal.regenerating || handoffModal.ticketUrl" class="space-y-3 pt-2">
                     <!-- Action A: Copy Ticket Link -->
                     <button
                         @click="copyHandoffText(handoffModal.ticketUrl, 'Ссылка на билет')"
@@ -2646,7 +2716,7 @@ watch: {
                 <!-- Footer button -->
                 <div class="pt-2">
                     <button @click="closeHandoffModal" class="w-full py-3 text-slate-400 hover:text-slate-600 font-bold text-xs rounded-xl transition-all text-center">
-                        Закрыть и перейти к списку броней
+                        {{ handoffModal.isExisting ? 'Закрыть' : 'Закрыть и перейти к списку броней' }}
                     </button>
                 </div>
             </div>

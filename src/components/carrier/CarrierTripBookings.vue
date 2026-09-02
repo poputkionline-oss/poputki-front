@@ -26,7 +26,7 @@ export default {
             default: null
         }
     },
-    emits: ['refresh', 'edit-booking', 'delete-booking'],
+    emits: ['refresh', 'edit-booking', 'delete-booking', 'open-handoff'],
     data() {
         return {
             selectedTicketId: null,
@@ -312,6 +312,23 @@ export default {
         },
         toggleCard(bookingId) {
             this.expandedBookingIds[bookingId] = !this.expandedBookingIds[bookingId];
+        },
+        isHandoffEligible(p) {
+            if (!p) return false;
+            const b = p.originalBooking || p;
+            const isManual = p.isManual || b.channel === 'manual' || b.source_type === 'manual' || b.source_type === 'carrier';
+            if (!isManual) return false;
+            if (p.status === 'cancelled' || b.status === 'cancelled') return false;
+            if (b.claimed_by_user_id) return false;
+            if (b.claim_status === 'claimed') return false;
+            return true;
+        },
+        isAlreadyClaimed(p) {
+            if (!p) return false;
+            const b = p.originalBooking || p;
+            const isManual = p.isManual || b.channel === 'manual' || b.source_type === 'manual' || b.source_type === 'carrier';
+            if (!isManual) return false;
+            return Boolean(b.claimed_by_user_id || b.claim_status === 'claimed');
         },
         cleanPhone(phone) {
             return (phone || '').replace(/\D/g, '');
@@ -795,6 +812,23 @@ export default {
                                     <td class="px-5 py-4 text-right">
                                         <div class="inline-flex items-center gap-2">
                                             <button
+                                                v-if="isHandoffEligible(p)"
+                                                @click="$emit('open-handoff', p)"
+                                                class="px-2.5 py-1 text-sky-700 hover:text-sky-800 bg-sky-50 hover:bg-sky-100 border border-sky-200/80 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1"
+                                                title="Передать билет пассажиру"
+                                            >
+                                                <span>✈️</span>
+                                                <span>Передать билет</span>
+                                            </button>
+                                            <span
+                                                v-else-if="isAlreadyClaimed(p)"
+                                                class="px-2 py-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/60 rounded-lg inline-flex items-center gap-1"
+                                                title="Поездка подтверждена пассажиром"
+                                            >
+                                                <span>✓</span>
+                                                <span>Подтверждено пассажиром</span>
+                                            </span>
+                                            <button
                                                 @click="openTicketPreview(p.bookingId)"
                                                 class="px-2.5 py-1 text-slate-700 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200/60 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1"
                                                 title="Посмотреть и распечатать электронный билет"
@@ -884,7 +918,22 @@ export default {
                                     <span v-else class="font-black text-emerald-600">{{ p.carrierAmount }} сом</span>
                                 </div>
                             </div>
-                            <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-2 flex-wrap justify-end">
+                                <button
+                                    v-if="isHandoffEligible(p)"
+                                    @click="$emit('open-handoff', p)"
+                                    class="px-2.5 py-1.5 text-sky-700 hover:text-sky-800 bg-sky-50 hover:bg-sky-100 border border-sky-200/80 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1"
+                                    title="Передать билет"
+                                >
+                                    <span>✈️</span>
+                                    <span>Передать билет</span>
+                                </button>
+                                <span
+                                    v-else-if="isAlreadyClaimed(p)"
+                                    class="px-2 py-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/60 rounded-lg"
+                                >
+                                    ✓ Подтверждено
+                                </span>
                                 <button
                                     @click="openTicketPreview(p.bookingId)"
                                     class="px-2.5 py-1.5 text-slate-700 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200/60 rounded-lg text-xs font-bold"
@@ -901,13 +950,30 @@ export default {
                             </div>
                         </div>
                         <div v-else class="pt-2 border-t border-slate-50 flex items-center justify-between text-xs">
-                            <button
-                                @click="openTicketPreview(p.bookingId)"
-                                class="px-2.5 py-1.5 text-slate-700 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200/60 rounded-lg text-xs font-bold"
-                                title="Билет"
-                            >
-                                🎫 Билет
-                            </button>
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <button
+                                    v-if="isHandoffEligible(p)"
+                                    @click="$emit('open-handoff', p)"
+                                    class="px-2.5 py-1.5 text-sky-700 hover:text-sky-800 bg-sky-50 hover:bg-sky-100 border border-sky-200/80 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1"
+                                    title="Передать билет"
+                                >
+                                    <span>✈️</span>
+                                    <span>Передать билет</span>
+                                </button>
+                                <span
+                                    v-else-if="isAlreadyClaimed(p)"
+                                    class="px-2 py-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/60 rounded-lg"
+                                >
+                                    ✓ Подтверждено
+                                </span>
+                                <button
+                                    @click="openTicketPreview(p.bookingId)"
+                                    class="px-2.5 py-1.5 text-slate-700 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200/60 rounded-lg text-xs font-bold"
+                                    title="Билет"
+                                >
+                                    🎫 Билет
+                                </button>
+                            </div>
                             <div class="flex items-center gap-2">
                                 <button @click="$emit('edit-booking', p.bookingId)" class="p-2 text-slate-400 hover:text-amber-500 rounded-lg bg-slate-50 text-xs font-bold">
                                     ✎
