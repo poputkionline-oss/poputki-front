@@ -1096,6 +1096,16 @@ export default {
                 this.shareToast = false;
             }, 3000);
         },
+        formatDate(dateStr) {
+            if (!dateStr) return '—';
+            try {
+                const d = new Date(dateStr);
+                if (isNaN(d.getTime())) return dateStr;
+                return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            } catch (e) {
+                return dateStr;
+            }
+        },
         getHandoffRoleMessage(role) {
             switch (role) {
                 case 'passenger':
@@ -1109,24 +1119,15 @@ export default {
                     return 'Контакт пассажира не подтверждён. Передайте билет только фактическому пассажиру.';
             }
         },
-        async copyHandoffText(text, label) {
+        async copyHandoffText(text, label = 'Ссылка') {
             if (!text) return;
-            try {
-                if (navigator?.clipboard?.writeText) {
-                    await navigator.clipboard.writeText(text);
-                } else {
-                    const el = document.createElement('textarea');
-                    el.value = text;
-                    document.body.appendChild(el);
-                    el.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(el);
-                }
-                this.handoffModal.copyFeedback = `${label} скопирована в буфер!`;
+            const success = await copyToClipboard(text);
+            if (success) {
+                this.handoffModal.copyFeedback = `${label} скопирована!`;
                 setTimeout(() => {
                     if (this.handoffModal) this.handoffModal.copyFeedback = '';
                 }, 3000);
-            } catch (err) {
+            } else {
                 this.handoffModal.copyFeedback = 'Не удалось скопировать';
                 setTimeout(() => {
                     if (this.handoffModal) this.handoffModal.copyFeedback = '';
@@ -1141,6 +1142,11 @@ export default {
         async openHandoffForBooking(p) {
             const bookingId = p.bookingId || p.id;
             if (!bookingId) return;
+
+            // Prevent concurrent duplicate clicks while request is in flight
+            if (this.handoffModal.show && this.handoffModal.regenerating && this.handoffModal.bookingId === bookingId) {
+                return;
+            }
 
             const b = p.originalBooking || p;
             const role = b.contact_role || p.contactRole || 'passenger';
@@ -1211,7 +1217,7 @@ export default {
                 } else if (err.response?.status === 403) {
                     this.handoffModal.regenerationError = 'Доступ запрещен: рейс не принадлежит вашему аккаунту перевозчика';
                 } else {
-                    this.handoffModal.regenerationError = 'Не удалось создать ссылку для передачи билета. Попробуйте ещё раз.';
+                    this.handoffModal.regenerationError = 'Не удалось открыть передачу билета. Попробуйте ещё раз.';
                 }
             } finally {
                 this.handoffModal.regenerating = false;
