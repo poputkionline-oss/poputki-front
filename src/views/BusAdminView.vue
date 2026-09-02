@@ -769,8 +769,13 @@ export default {
             this.loading = true;
             try {
                 await api.delete(`/bus-admin/bookings/${id}`);
+                // Optimistically remove from local bookings array immediately
+                if (Array.isArray(this.bookings)) {
+                    this.bookings = this.bookings.filter(b => b.id !== id);
+                }
                 alert('Бронирование удалено');
-                this.fetchBookings();
+                // Refetch BOTH bookings and tickets so seat occupancy and metadata refresh immediately
+                await Promise.all([this.fetchBookings(), this.fetchTickets()]);
             } catch (e) {
                 alert('Ошибка при удалении: ' + (e.response?.data?.error || e.message));
             } finally {
@@ -1222,31 +1227,61 @@ export default {
         },
         bookedSeatsForCurrentTicket() {
             const ticket = this.currentBookingTicket;
-            if (!ticket || !Array.isArray(ticket.reserved_seats)) return [];
+            if (!ticket) return [];
+
+            // If bookings are loaded in state, dynamically derive canonical active seats
+            if (Array.isArray(this.bookings) && this.bookings.length > 0) {
+                const activeSeats = new Set();
+                this.bookings
+                    .filter(b => Number(b.bus_ticket_id) === Number(ticket.id) && b.status !== 'cancelled')
+                    .forEach(b => {
+                        const isConfirmed = b.status === 'confirmed';
+                        const isPendingHold = b.status === 'pending_payment' && (!b.hold_expires_at || new Date(b.hold_expires_at) > new Date());
+                        if (isConfirmed || isPendingHold) {
+                            const seats = Array.isArray(b.seat_numbers) ? b.seat_numbers : (typeof b.seat_numbers === 'string' ? JSON.parse(b.seat_numbers || '[]') : []);
+                            seats.forEach(s => {
+                                const num = Number(s);
+                                if (!isNaN(num)) activeSeats.add(num);
+                            });
+                        }
+                    });
+                return Array.from(activeSeats);
+            }
+
+            // Fallback to ticket reserved_seats from backend API
+            if (!Array.isArray(ticket.reserved_seats)) return [];
             return ticket.reserved_seats.map(s => Number(s)).filter(s => !isNaN(s));
         },
         seatGendersForCurrentTicket() {
             const ticket = this.currentBookingTicket;
-            const fromTicket = (ticket && (ticket.seatGenders || ticket.seat_genders)) ? (ticket.seatGenders || ticket.seat_genders) : {};
-            const result = { ...fromTicket };
+            if (!ticket) return {};
+            const result = {};
 
-            // Augment from this.bookings if already fetched in carrier session
-            if (ticket && Array.isArray(this.bookings)) {
+            // If bookings are loaded in state, dynamically derive genders strictly from remaining active bookings
+            if (Array.isArray(this.bookings) && this.bookings.length > 0) {
                 this.bookings
                     .filter(b => Number(b.bus_ticket_id) === Number(ticket.id) && b.status !== 'cancelled')
                     .forEach(b => {
-                        const seats = Array.isArray(b.seat_numbers) ? b.seat_numbers : (typeof b.seat_numbers === 'string' ? JSON.parse(b.seat_numbers || '[]') : []);
-                        const pData = Array.isArray(b.passengers_data) ? b.passengers_data : (typeof b.passengers_data === 'string' ? JSON.parse(b.passengers_data || '[]') : []);
-                        seats.forEach((s, idx) => {
-                            const num = Number(s);
-                            const g = pData[idx]?.gender;
-                            if (!isNaN(num) && (g === 'male' || g === 'female') && !result[num]) {
-                                result[num] = g;
-                            }
-                        });
+                        const isConfirmed = b.status === 'confirmed';
+                        const isPendingHold = b.status === 'pending_payment' && (!b.hold_expires_at || new Date(b.hold_expires_at) > new Date());
+                        if (isConfirmed || isPendingHold) {
+                            const seats = Array.isArray(b.seat_numbers) ? b.seat_numbers : (typeof b.seat_numbers === 'string' ? JSON.parse(b.seat_numbers || '[]') : []);
+                            const pData = Array.isArray(b.passengers_data) ? b.passengers_data : (typeof b.passengers_data === 'string' ? JSON.parse(b.passengers_data || '[]') : []);
+                            seats.forEach((s, idx) => {
+                                const num = Number(s);
+                                const g = pData[idx]?.gender;
+                                if (!isNaN(num) && (g === 'male' || g === 'female')) {
+                                    result[num] = g;
+                                }
+                            });
+                        }
                     });
+                return result;
             }
-            return result;
+
+            // Fallback to ticket metadata if bookings array not yet populated
+            const fromTicket = (ticket.seatGenders || ticket.seat_genders) || {};
+            return { ...fromTicket };
         },
         crmPassengers() {
             const manifest = [];
