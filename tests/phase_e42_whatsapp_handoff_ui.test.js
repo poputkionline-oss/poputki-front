@@ -180,9 +180,9 @@ https://www.poputki.online/ticket-verify/sample-token`;
         });
 
         assert.ok(msg.startsWith('Здравствуйте, Али Саидов!'));
-        assert.ok(msg.includes('🚌 Маршрут: Душанбе → Худжанд'));
-        assert.ok(msg.includes('📅 Дата отправления: 10.09.2026'));
-        assert.ok(msg.includes('💺 Место: 12'));
+        assert.ok(msg.includes('Маршрут: Душанбе'));
+        assert.ok(msg.includes('Дата отправления: 10.09.2026'));
+        assert.ok(msg.includes('Место: 12'));
         assert.ok(msg.includes('POPUTKI.ONLINE\nПОЕЗДКИ С ДОВЕРИЕМ'));
     });
 

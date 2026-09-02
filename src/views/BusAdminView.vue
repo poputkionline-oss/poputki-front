@@ -5,7 +5,12 @@ import { exportPassengerManifestExcel, sortPassengersBySeat } from '../utils/exc
 import { compressImage } from '../utils/imageCompression';
 import { uploadToCloudinaryDirect } from '../utils/cloudinary';
 import { copyToClipboard } from '../telegram';
-import { formatWhatsAppHandoffMessage, buildWhatsAppHandoffUrl } from '../utils/whatsAppHandoff';
+import {
+    formatWhatsAppHandoffMessage,
+    buildWhatsAppHandoffUrl,
+    formatSmsHandoffMessage,
+    buildSmsHandoffUrl
+} from '../utils/whatsAppHandoff';
 import BusSeatSelector from '../components/BusSeatSelector.vue';
 import CarrierBoarding from '../components/carrier/CarrierBoarding.vue';
 import CarrierTripBookings from '../components/carrier/CarrierTripBookings.vue';
@@ -1224,6 +1229,7 @@ export default {
             }
         },
         sendHandoffViaWhatsApp() {
+            this.handoffModal.phoneError = '';
             this.handoffModal.whatsAppError = '';
             this.handoffModal.copyFeedback = '';
 
@@ -1231,6 +1237,7 @@ export default {
             const ticketUrl = this.handoffModal.ticketUrl;
 
             if (!ticketUrl) {
+                this.handoffModal.phoneError = 'Ссылка на билет ещё не готова.';
                 this.handoffModal.whatsAppError = 'Ссылка на билет ещё не готова.';
                 return;
             }
@@ -1258,7 +1265,9 @@ export default {
             const url = buildWhatsAppHandoffUrl({ phone, message });
 
             if (!url) {
-                this.handoffModal.whatsAppError = 'Не удалось определить номер WhatsApp для этого контакта.';
+                const err = 'Не удалось определить номер телефона для этого контакта.';
+                this.handoffModal.phoneError = err;
+                this.handoffModal.whatsAppError = err;
                 return;
             }
 
@@ -1267,6 +1276,60 @@ export default {
 
             // Truthful feedback: never claim message was sent
             this.handoffModal.copyFeedback = 'WhatsApp открыт. Проверьте сообщение и нажмите «Отправить».';
+            setTimeout(() => {
+                if (this.handoffModal) {
+                    this.handoffModal.copyFeedback = '';
+                }
+            }, 5000);
+        },
+        sendHandoffViaSms() {
+            this.handoffModal.phoneError = '';
+            this.handoffModal.whatsAppError = '';
+            this.handoffModal.copyFeedback = '';
+
+            const phone = this.handoffModal.contactPhone || (this.handoffModal.passengers?.[0]?.phone) || '';
+            const ticketUrl = this.handoffModal.ticketUrl;
+
+            if (!ticketUrl) {
+                this.handoffModal.phoneError = 'Ссылка на билет ещё не готова.';
+                this.handoffModal.whatsAppError = 'Ссылка на билет ещё не готова.';
+                return;
+            }
+
+            const passengerNames = (this.handoffModal.passengers || [])
+                .map(p => p.name)
+                .filter(Boolean)
+                .join(', ');
+
+            const seats = (this.handoffModal.passengers || [])
+                .map(p => p.seat)
+                .filter(Boolean)
+                .join(', ') || this.handoffModal.trip?.seats || '—';
+
+            const message = formatSmsHandoffMessage({
+                role: this.handoffModal.role,
+                name: passengerNames || 'Пассажир',
+                fromCity: this.handoffModal.trip?.fromCity || '—',
+                toCity: this.handoffModal.trip?.toCity || '—',
+                departureDate: this.handoffModal.trip?.departureDate || '—',
+                seats: seats,
+                ticketUrl: ticketUrl
+            });
+
+            const url = buildSmsHandoffUrl({ phone, message });
+
+            if (!url) {
+                const err = 'Не удалось определить номер телефона для этого контакта.';
+                this.handoffModal.phoneError = err;
+                this.handoffModal.whatsAppError = err;
+                return;
+            }
+
+            // Direct synchronous navigation to open native SMS composer
+            window.location.href = url;
+
+            // Truthful feedback: never claim SMS was sent
+            this.handoffModal.copyFeedback = 'Открыто приложение SMS. Проверьте сообщение и нажмите «Отправить».';
             setTimeout(() => {
                 if (this.handoffModal) {
                     this.handoffModal.copyFeedback = '';
@@ -2780,7 +2843,19 @@ watch: {
                         <span class="text-emerald-100 text-[10px] font-bold">Основной способ</span>
                     </button>
 
-                    <!-- Action 2: SECONDARY - Open in Telegram (only if unclaimed) -->
+                    <!-- Action 2: FALLBACK - Send via SMS -->
+                    <button
+                        @click="sendHandoffViaSms"
+                        class="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-2xl shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-between"
+                    >
+                        <span class="flex items-center gap-2">
+                            <span>📱</span>
+                            <span>Отправить по SMS</span>
+                        </span>
+                        <span class="text-indigo-100 text-[10px] font-bold">Резервный способ</span>
+                    </button>
+
+                    <!-- Action 3: SECONDARY - Open in Telegram (only if unclaimed) -->
                     <div v-if="!handoffModal.isClaimed && handoffModal.claimUrl" class="flex items-center gap-2">
                         <button
                             @click="openHandoffTelegram"
@@ -2801,7 +2876,7 @@ watch: {
                         </button>
                     </div>
 
-                    <!-- Action 3: UTILITY - Copy Link (canonical ticket URL) -->
+                    <!-- Action 4: UTILITY - Copy Link (canonical ticket URL) -->
                     <button
                         @click="copyHandoffText(handoffModal.ticketUrl, 'Ссылка на билет')"
                         class="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-2xl transition-all flex items-center justify-between"
@@ -2814,7 +2889,7 @@ watch: {
                         <span class="text-slate-400 text-[10px]">Билет</span>
                     </button>
 
-                    <!-- Action 4: UTILITY - Open Ticket in View/Print -->
+                    <!-- Action 5: UTILITY - Open Ticket in View/Print -->
                     <button
                         @click="openHandoffTicket"
                         class="w-full py-3 px-4 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs rounded-2xl shadow-md shadow-amber-500/20 transition-all flex items-center justify-center gap-2"
@@ -2828,8 +2903,8 @@ watch: {
                 <div v-if="handoffModal.copyFeedback" class="text-center text-xs font-bold text-emerald-600 animate-fadeIn">
                     ✓ {{ handoffModal.copyFeedback }}
                 </div>
-                <div v-if="handoffModal.whatsAppError" class="text-center text-xs font-bold text-rose-600 animate-fadeIn">
-                    {{ handoffModal.whatsAppError }}
+                <div v-if="handoffModal.phoneError || handoffModal.whatsAppError" class="text-center text-xs font-bold text-rose-600 animate-fadeIn">
+                    {{ handoffModal.phoneError || handoffModal.whatsAppError }}
                 </div>
                 <div v-if="handoffModal.regenerationError" class="text-center text-xs font-bold text-rose-600 animate-fadeIn">
                     {{ handoffModal.regenerationError }}
