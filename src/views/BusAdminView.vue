@@ -2243,33 +2243,16 @@ watch: {
                                     </div>
                                 </div>
 
-                                <!-- Contact Details & Role Section -->
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-3 border-t border-slate-200/60">
+                                <!-- Contact Details Section -->
+                                <!-- Phase E.45: contact_role is no longer carrier-selectable here. New
+                                     manual bookings always default to contact_role='unknown' server-side;
+                                     auto-claim now depends solely on verified Telegram identity + phone
+                                     match, never on this field (see utils/claimHelper.js). -->
+                                <div class="grid grid-cols-1 gap-4 mt-4 pt-3 border-t border-slate-200/60">
                                     <div class="space-y-1">
                                         <label class="text-[9px] text-slate-500 font-black uppercase ml-1">Телефон для связи (необязательно)</label>
                                         <input v-model="p.phone" placeholder="+992 92 123 4567" class="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm text-slate-900 outline-none focus:border-amber-500 shadow-sm font-mono" />
                                         <p class="text-[10px] text-slate-400 ml-1">Международный формат (+992, +7, +998) или оставьте пустым</p>
-                                    </div>
-                                    <div class="space-y-1">
-                                        <label class="text-[9px] text-slate-500 font-black uppercase ml-1">Контакт принадлежит</label>
-                                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 bg-white border border-slate-200 rounded-xl p-2 text-xs text-slate-700 shadow-sm">
-                                            <label class="flex items-center gap-1.5 cursor-pointer font-medium p-1 rounded hover:bg-slate-50">
-                                                <input type="radio" value="passenger" v-model="bookingForm.contact_role" class="text-amber-500 focus:ring-amber-500" />
-                                                <span class="truncate">Пассажиру</span>
-                                            </label>
-                                            <label class="flex items-center gap-1.5 cursor-pointer font-medium p-1 rounded hover:bg-slate-50">
-                                                <input type="radio" value="family_or_group" v-model="bookingForm.contact_role" class="text-amber-500 focus:ring-amber-500" />
-                                                <span class="truncate">Семье / группе</span>
-                                            </label>
-                                            <label class="flex items-center gap-1.5 cursor-pointer font-medium p-1 rounded hover:bg-slate-50">
-                                                <input type="radio" value="coordinator" v-model="bookingForm.contact_role" class="text-amber-500 focus:ring-amber-500" />
-                                                <span class="truncate">Посреднику</span>
-                                            </label>
-                                            <label class="flex items-center gap-1.5 cursor-pointer font-medium p-1 rounded hover:bg-slate-50">
-                                                <input type="radio" value="unknown" v-model="bookingForm.contact_role" class="text-amber-500 focus:ring-amber-500" />
-                                                <span class="truncate">Не знаю</span>
-                                            </label>
-                                        </div>
                                     </div>
                                 </div>
                             </div>

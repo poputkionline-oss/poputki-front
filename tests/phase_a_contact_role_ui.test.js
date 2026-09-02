@@ -10,15 +10,15 @@ import { resolve } from 'node:path';
 
 describe('MANUAL BOOKING PASSENGER ACTIVATION V1 — PHASE A.1 FRONTEND UI TESTS', () => {
 
-    it('1. BusAdminView.vue contains all 4 Contact Role options in manual booking form', () => {
+    it('1. BusAdminView.vue no longer exposes a Contact Role selector in the manual booking form (Phase E.45)', () => {
         const busAdminVue = readFileSync(resolve('src/views/BusAdminView.vue'), 'utf-8');
-        assert.ok(busAdminVue.includes('Контакт принадлежит'));
-        assert.ok(busAdminVue.includes('Пассажиру'));
-        assert.ok(busAdminVue.includes('Семье / группе'));
-        assert.ok(busAdminVue.includes('Посреднику'));
-        assert.ok(busAdminVue.includes('Не знаю'));
-        assert.ok(busAdminVue.includes('v-model="bookingForm.contact_role"'));
-        assert.ok(busAdminVue.includes('value="family_or_group"'));
+        assert.ok(!busAdminVue.includes('Контакт принадлежит'), 'Contact-role selector label must be removed');
+        assert.ok(!busAdminVue.includes('Пассажиру'), 'passenger radio label must be removed');
+        assert.ok(!busAdminVue.includes('Семье / группе'), 'family_or_group radio label must be removed');
+        assert.ok(!busAdminVue.includes('Посреднику'), 'coordinator radio label must be removed');
+        assert.ok(!busAdminVue.includes('Не знаю'), 'unknown radio label must be removed');
+        assert.ok(!busAdminVue.includes('v-model="bookingForm.contact_role"'), 'no input may bind directly to contact_role anymore');
+        assert.ok(!busAdminVue.includes('value="family_or_group"'), 'no radio input for family_or_group may remain');
     });
 
     it('2. BusAdminView.vue initializes contact_role to unknown by default', () => {
