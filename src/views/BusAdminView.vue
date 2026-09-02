@@ -989,8 +989,11 @@ export default {
                         regenerating: false,
                         regenerationError: ''
                     };
-                } else {
+                } else if (res.data?.is_auto_claimed) {
                     alert('Бронь успешно создана! Билет отправлен пассажиру в Telegram.');
+                    this.closeHandoffModal();
+                } else {
+                    alert('Бронь успешно создана!');
                     this.closeHandoffModal();
                 }
             } catch (e) {
