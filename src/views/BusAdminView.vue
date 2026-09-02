@@ -168,6 +168,19 @@ export default {
             selectedShareTicket: null,
             shareToast: false,
             shareToastMessage: '',
+            handoffModal: {
+                show: false,
+                role: 'unknown',
+                bookingId: null,
+                claimUrl: '',
+                ticketUrl: '',
+                expiresAt: null,
+                isClaimed: false,
+                passengers: [],
+                copyFeedback: '',
+                regenerating: false,
+                regenerationError: ''
+            },
             ticketsState: 'idle', // 'idle' | 'loading' | 'success' | 'empty' | 'auth_error' | 'forbidden_error' | 'network_error'
             ticketsErrorMessage: '',
             authErrorMessage: '',
@@ -940,7 +953,7 @@ export default {
                 const rawPhone = firstP.phone ? String(firstP.phone).trim() : '';
                 const cleanPhone = (rawPhone && rawPhone !== '—' && rawPhone !== '-') ? rawPhone : null;
 
-                await api.post('/bus-admin/bookings/manual', {
+                const res = await api.post('/bus-admin/bookings/manual', {
                     bus_ticket_id: f.bus_ticket_id,
                     operator_id: this.user.id,
                     passenger_name: contactName,
@@ -952,23 +965,29 @@ export default {
                     drop_off_city: f.drop_off_city
                 });
 
-                alert('Бронь успешно создана!');
-                // Reset
-                this.prefilledCrmCustomer = null;
-                this.selectedManualSeats = [];
-                this.showManualForm = false;
-                this.bookingForm = {
-                    bus_ticket_id: '',
-                    passenger_count: 1,
-                    contact_role: 'unknown',
-                    passengers_data: [{ lastName: '', firstName: '', middleName: '', gender: 'male', docType: 'Загранпаспорт', docNumber: '', birthDate: '', citizenship: 'Таджикистан', phone: '', seatNumber: '' }],
-                    pickup_city: '',
-                    drop_off_city: '',
-                    phone: '',
-                    passenger_name: ''
-                };
-                this.activeTab = 'bookings';
-                this.fetchBookings();
+                if (res.data?.handoff?.required) {
+                    const h = res.data.handoff;
+                    this.handoffModal = {
+                        show: true,
+                        role: h.contact_role || f.contact_role || 'unknown',
+                        bookingId: res.data.id || res.data.booking_id,
+                        ticketUrl: h.ticket_url,
+                        claimUrl: h.claim_url,
+                        expiresAt: h.expires_at,
+                        isClaimed: false,
+                        passengers: f.passengers_data.map(p => ({
+                            name: `${p.lastName} ${p.firstName}`.trim(),
+                            seat: p.seatNumber,
+                            phone: p.phone
+                        })),
+                        copyFeedback: '',
+                        regenerating: false,
+                        regenerationError: ''
+                    };
+                } else {
+                    alert('Бронь успешно создана! Билет отправлен пассажиру в Telegram.');
+                    this.closeHandoffModal();
+                }
             } catch (e) {
                 alert(e.response?.data?.message || e.response?.data?.error || 'Ошибка при бронировании');
             } finally { this.loading = false; }
@@ -1047,6 +1066,96 @@ export default {
             setTimeout(() => {
                 this.shareToast = false;
             }, 3000);
+        },
+        getHandoffRoleMessage(role) {
+            switch (role) {
+                case 'passenger':
+                    return 'Пассажир пока не подключён к Telegram-боту POPUTKI.ONLINE. Передайте ему билет или ссылку для получения поездки.';
+                case 'family_or_group':
+                    return 'Передайте билеты членам семьи / группы. Каждый пассажир должен получить и подтвердить свою поездку отдельно.';
+                case 'coordinator':
+                    return 'Передайте билет посреднику для отправки пассажиру. Посредник не становится владельцем брони.';
+                case 'unknown':
+                default:
+                    return 'Контакт пассажира не подтверждён. Передайте билет только фактическому пассажиру.';
+            }
+        },
+        async copyHandoffText(text, label) {
+            if (!text) return;
+            try {
+                if (navigator?.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(text);
+                } else {
+                    const el = document.createElement('textarea');
+                    el.value = text;
+                    document.body.appendChild(el);
+                    el.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(el);
+                }
+                this.handoffModal.copyFeedback = `${label} скопирована в буфер!`;
+                setTimeout(() => {
+                    if (this.handoffModal) this.handoffModal.copyFeedback = '';
+                }, 3000);
+            } catch (err) {
+                this.handoffModal.copyFeedback = 'Не удалось скопировать';
+                setTimeout(() => {
+                    if (this.handoffModal) this.handoffModal.copyFeedback = '';
+                }, 3000);
+            }
+        },
+        openHandoffTicket() {
+            if (this.handoffModal.ticketUrl) {
+                window.open(this.handoffModal.ticketUrl, '_blank');
+            }
+        },
+        async regenerateHandoffClaimLink() {
+            if (!this.handoffModal.bookingId) return;
+            this.handoffModal.regenerating = true;
+            this.handoffModal.regenerationError = '';
+            try {
+                const res = await api.post(`/bus-admin/bookings/${this.handoffModal.bookingId}/claim-link`);
+                if (res.data?.claim_url) {
+                    this.handoffModal.claimUrl = res.data.claim_url;
+                    this.handoffModal.expiresAt = res.data.expires_at;
+                    this.handoffModal.copyFeedback = 'Создана новая ссылка!';
+                    setTimeout(() => {
+                        if (this.handoffModal) this.handoffModal.copyFeedback = '';
+                    }, 3000);
+                }
+            } catch (err) {
+                if (err.response?.status === 409) {
+                    this.handoffModal.isClaimed = true;
+                    this.handoffModal.regenerationError = 'Поездка уже подтверждена пассажиром';
+                } else {
+                    this.handoffModal.regenerationError = err.response?.data?.message || 'Не удалось обновить ссылку';
+                }
+            } finally {
+                this.handoffModal.regenerating = false;
+            }
+        },
+        isHandoffExpired() {
+            if (!this.handoffModal.expiresAt) return false;
+            return new Date(this.handoffModal.expiresAt) <= new Date();
+        },
+        closeHandoffModal() {
+            this.handoffModal.show = false;
+            // Reset
+            this.prefilledCrmCustomer = null;
+            this.selectedManualSeats = [];
+            this.showManualForm = false;
+            this.bookingForm = {
+                bus_ticket_id: '',
+                passenger_count: 1,
+                contact_role: 'unknown',
+                passengers_data: [{ lastName: '', firstName: '', middleName: '', gender: 'male', docType: 'Загранпаспорт', docNumber: '', birthDate: '', citizenship: 'Таджикистан', phone: '', seatNumber: '' }],
+                pickup_city: '',
+                drop_off_city: '',
+                phone: '',
+                passenger_name: ''
+            };
+            this.activeTab = 'bookings';
+            this.fetchBookings();
         }
     },
     computed: {
@@ -2393,6 +2502,113 @@ watch: {
                     </button>
                     <button v-else @click="updateBusTicket(true)" class="flex-1 py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer">
                         Все равно сохранить
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phase E.38.2 Manual Booking Handoff Modal -->
+        <div v-if="handoffModal.show" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+            <div class="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl border border-slate-100 relative space-y-5">
+                <button @click="closeHandoffModal" class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-50 transition-colors">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+
+                <!-- Header -->
+                <div class="flex items-center space-x-3">
+                    <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-2xl font-bold">
+                        🎫
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-black text-slate-900">Бронь создана</h3>
+                        <p class="text-xs text-slate-400">Бронирование #{{ handoffModal.bookingId }}</p>
+                    </div>
+                </div>
+
+                <!-- Role Instruction Banner -->
+                <div class="p-4 rounded-2xl bg-amber-50/80 border border-amber-200/60 text-xs font-medium text-amber-900 leading-relaxed">
+                    {{ getHandoffRoleMessage(handoffModal.role) }}
+                </div>
+
+                <!-- Passenger Summary Card -->
+                <div v-if="handoffModal.passengers && handoffModal.passengers.length > 0" class="bg-slate-50 rounded-2xl p-3 border border-slate-100 max-h-32 overflow-y-auto space-y-1.5">
+                    <div v-for="(p, pi) in handoffModal.passengers" :key="pi" class="flex items-center justify-between text-xs py-1 px-2 bg-white rounded-xl border border-slate-200/40">
+                        <div class="flex items-center gap-2">
+                            <span class="w-6 h-6 rounded-lg bg-amber-100 text-amber-800 font-black text-[11px] flex items-center justify-center">{{ p.seat }}</span>
+                            <span class="font-bold text-slate-800">{{ p.name || 'Пассажир ' + (pi + 1) }}</span>
+                        </div>
+                        <span v-if="p.phone" class="text-slate-400 font-mono text-[10px]">{{ p.phone }}</span>
+                    </div>
+                </div>
+
+                <!-- Already Claimed State -->
+                <div v-if="handoffModal.isClaimed" class="p-3 bg-emerald-50 text-emerald-800 rounded-2xl text-xs font-bold border border-emerald-200 text-center">
+                    ✓ Поездка уже подтверждена пассажиром
+                </div>
+
+                <!-- Expired State & Regeneration -->
+                <div v-else-if="isHandoffExpired()" class="p-3 bg-rose-50 text-rose-800 rounded-2xl text-xs font-bold border border-rose-200 flex items-center justify-between">
+                    <span>⚠️ Ссылка для получения поездки истекла.</span>
+                    <button
+                        @click="regenerateHandoffClaimLink"
+                        :disabled="handoffModal.regenerating"
+                        class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+                    >
+                        {{ handoffModal.regenerating ? 'Создание...' : 'Сгенерировать новую' }}
+                    </button>
+                </div>
+
+                <!-- Actions List -->
+                <div class="space-y-3 pt-2">
+                    <!-- Action A: Copy Ticket Link -->
+                    <button
+                        @click="copyHandoffText(handoffModal.ticketUrl, 'Ссылка на билет')"
+                        class="w-full py-3.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-2xl transition-all flex items-center justify-between"
+                    >
+                        <span class="flex items-center gap-2">
+                            <span>🔗</span>
+                            <span>Скопировать ссылку на билет</span>
+                        </span>
+                        <span class="text-slate-400 text-[10px]">Веб-версия</span>
+                    </button>
+
+                    <!-- Action B: Copy Telegram Claim Link (only if unclaimed) -->
+                    <button
+                        v-if="!handoffModal.isClaimed"
+                        @click="copyHandoffText(handoffModal.claimUrl, 'Ссылка для Telegram')"
+                        class="w-full py-3.5 px-4 bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold text-xs rounded-2xl border border-sky-200 transition-all flex items-center justify-between"
+                    >
+                        <span class="flex items-center gap-2">
+                            <span>✈️</span>
+                            <span>Скопировать ссылку для Telegram</span>
+                        </span>
+                        <span class="text-sky-500 text-[10px]">Для бота</span>
+                    </button>
+
+                    <!-- Action C: Open Ticket in View/Print -->
+                    <button
+                        @click="openHandoffTicket"
+                        class="w-full py-3.5 px-4 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs rounded-2xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2"
+                    >
+                        <span>🎫</span>
+                        <span>Открыть билет</span>
+                    </button>
+                </div>
+
+                <!-- Toast / Feedback within modal -->
+                <div v-if="handoffModal.copyFeedback" class="text-center text-xs font-bold text-emerald-600 animate-fadeIn">
+                    ✓ {{ handoffModal.copyFeedback }}
+                </div>
+                <div v-if="handoffModal.regenerationError" class="text-center text-xs font-bold text-rose-600 animate-fadeIn">
+                    {{ handoffModal.regenerationError }}
+                </div>
+
+                <!-- Footer button -->
+                <div class="pt-2">
+                    <button @click="closeHandoffModal" class="w-full py-3 text-slate-400 hover:text-slate-600 font-bold text-xs rounded-xl transition-all text-center">
+                        Закрыть и перейти к списку броней
                     </button>
                 </div>
             </div>
