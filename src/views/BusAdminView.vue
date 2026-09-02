@@ -899,12 +899,16 @@ export default {
                 alert('Выберите рейс');
                 return;
             }
-            // Validate each passenger has a seat number
+            // Validate each passenger has a seat number and gender
             for (let i = 0; i < f.passengers_data.length; i++) {
                 const p = f.passengers_data[i];
                 const seatNum = Number(p.seatNumber);
                 if (!seatNum || seatNum < 1) {
                     alert(`Пассажир ${i + 1}: укажите номер места`);
+                    return;
+                }
+                if (!p.gender || (p.gender !== 'male' && p.gender !== 'female')) {
+                    alert(`Пассажир ${i + 1}: укажите пол (Мужской или Женский)`);
                     return;
                 }
             }
@@ -1111,6 +1115,29 @@ export default {
             const ticket = this.currentBookingTicket;
             if (!ticket || !Array.isArray(ticket.reserved_seats)) return [];
             return ticket.reserved_seats.map(s => Number(s)).filter(s => !isNaN(s));
+        },
+        seatGendersForCurrentTicket() {
+            const ticket = this.currentBookingTicket;
+            const fromTicket = (ticket && (ticket.seatGenders || ticket.seat_genders)) ? (ticket.seatGenders || ticket.seat_genders) : {};
+            const result = { ...fromTicket };
+
+            // Augment from this.bookings if already fetched in carrier session
+            if (ticket && Array.isArray(this.bookings)) {
+                this.bookings
+                    .filter(b => Number(b.bus_ticket_id) === Number(ticket.id) && b.status !== 'cancelled')
+                    .forEach(b => {
+                        const seats = Array.isArray(b.seat_numbers) ? b.seat_numbers : (typeof b.seat_numbers === 'string' ? JSON.parse(b.seat_numbers || '[]') : []);
+                        const pData = Array.isArray(b.passengers_data) ? b.passengers_data : (typeof b.passengers_data === 'string' ? JSON.parse(b.passengers_data || '[]') : []);
+                        seats.forEach((s, idx) => {
+                            const num = Number(s);
+                            const g = pData[idx]?.gender;
+                            if (!isNaN(num) && (g === 'male' || g === 'female') && !result[num]) {
+                                result[num] = g;
+                            }
+                        });
+                    });
+            }
+            return result;
         },
         crmPassengers() {
             const manifest = [];
@@ -1706,6 +1733,7 @@ watch: {
                                 v-model="selectedManualSeats"
                                 @seat-dblclick="handleSeatDblClick"
                                 :bookedSeats="bookedSeatsForCurrentTicket"
+                                :seatGenders="seatGendersForCurrentTicket"
                                 :totalSeats="currentBookingTicket.total_seats"
                                 :floor1Seats="currentBookingTicket.floor1_seats"
                                 :floor2Seats="currentBookingTicket.floor2_seats"

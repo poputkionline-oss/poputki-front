@@ -247,13 +247,26 @@ export default {
             if (this.isSeatBooked(seatNum)) return;
             this.$emit('seat-dblclick', Number(seatNum));
         },
+        getBookedSeatGender(seatNum) {
+            if (!this.isSeatBooked(seatNum)) return null;
+            const num = Number(seatNum);
+            const gender = this.seatGenders?.[num] || this.seatGenders?.[String(seatNum)] || null;
+            return (gender === 'male' || gender === 'female') ? gender : null;
+        },
+        getSeatGender(seatNum) {
+            return this.getBookedSeatGender(seatNum);
+        },
         getSeatClass(seatNum) {
-            if (this.isSeatBooked(seatNum)) return 'seat-booked';
+            if (this.isSeatBooked(seatNum)) {
+                const gender = this.getBookedSeatGender(seatNum);
+                if (gender === 'male') return 'seat-booked seat-male-booked booked-male';
+                if (gender === 'female') return 'seat-booked seat-female-booked booked-female';
+                return 'seat-booked';
+            }
             if (this.isSeatSelected(seatNum)) return 'seat-selected';
             if (this.isSeatPremium(seatNum)) return 'seat-premium';
             return 'seat-free';
-        },
-        getSeatGender(seatNum) { return this.seatGenders[seatNum] || null; }
+        }
     },
     watch: {
         busType(newVal) {
@@ -370,8 +383,13 @@ export default {
 
                 <template v-else-if="row.type === 'last-row'">
                     <div class="last-row-grid">
-                        <button v-for="s in row.seats" :key="s" @click="toggleSeat(s)" @dblclick.prevent="handleDblClick(s)" :class="['seat-btn', getSeatClass(s)]" :disabled="isSeatBooked(s)">
-                            <span class="num">{{ s }}</span>
+                        <button v-for="s in row.seats" :key="s" @click="toggleSeat(s)" @dblclick.prevent="handleDblClick(s)" :class="['seat-btn', getSeatClass(s), getSeatGender(s) ? 'booked-'+getSeatGender(s) : '']" :disabled="isSeatBooked(s)">
+                            <template v-if="getSeatGender(s)">
+                                <svg class="gender-icon" :class="getSeatGender(s)==='male'?'male':'female'" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a5 5 0 110 10A5 5 0 0112 2zm0 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/></svg>
+                            </template>
+                            <template v-else>
+                                <span class="num">{{ s }}</span>
+                            </template>
                         </button>
                     </div>
                 </template>
@@ -393,8 +411,9 @@ export default {
 
         <div class="legend">
             <div class="item"><div class="swatch selected">N</div><span>Выбрано</span></div>
-            <div class="item"><div class="swatch male"><svg class="ico" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a5 5 0 110 10A5 5 0 0112 2zm0 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/></svg></div><span>Муж</span></div>
-            <div class="item"><div class="swatch female"><svg class="ico" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a5 5 0 110 10A5 5 0 0112 2zm0 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/></svg></div><span>Жен</span></div>
+            <div class="item"><div class="swatch male"><svg class="ico" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a5 5 0 110 10A5 5 0 0112 2zm0 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/></svg></div><span>Мужчина</span></div>
+            <div class="item"><div class="swatch female"><svg class="ico" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a5 5 0 110 10A5 5 0 0112 2zm0 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/></svg></div><span>Женщина</span></div>
+            <div class="item"><div class="swatch booked">N</div><span>Занято (пол не указан)</span></div>
             <div class="item"><div class="swatch free">N</div><span>Свободно</span></div>
             <div v-if="busType === 'double'" class="item"><div class="swatch premium">★</div><span>Премиум</span></div>
         </div>
@@ -428,8 +447,9 @@ export default {
 .seat-free { border-color: #cbd5e1; }
 .seat-selected { background: #2563eb; border-color: #1e40af; color: #fff; }
 .seat-booked { background: #f1f5f9; border-color: #e2e8f0; cursor: not-allowed; }
-.booked-male { background: #eff6ff; border-color: #bfdbfe; }
-.booked-female { background: #fdf2f8; border-color: #fbcfe8; }
+.booked-male, .seat-male-booked { background: #eff6ff; border-color: #bfdbfe; cursor: not-allowed; }
+.booked-female, .seat-female-booked { background: #fdf2f8; border-color: #fbcfe8; cursor: not-allowed; }
+.legend .swatch.booked { background: #f1f5f9; border-color: #e2e8f0; color: #94a3b8; }
 .seat-premium { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
 
 .num { font-size: 16px; font-weight: 900; }
