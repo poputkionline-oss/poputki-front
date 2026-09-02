@@ -5,6 +5,7 @@ import { exportPassengerManifestExcel, sortPassengersBySeat } from '../utils/exc
 import { compressImage } from '../utils/imageCompression';
 import { uploadToCloudinaryDirect } from '../utils/cloudinary';
 import { copyToClipboard } from '../telegram';
+import { formatWhatsAppHandoffMessage, buildWhatsAppHandoffUrl } from '../utils/whatsAppHandoff';
 import BusSeatSelector from '../components/BusSeatSelector.vue';
 import CarrierBoarding from '../components/carrier/CarrierBoarding.vue';
 import CarrierTripBookings from '../components/carrier/CarrierTripBookings.vue';
@@ -170,6 +171,7 @@ export default {
             shareToastMessage: '',
             handoffModal: {
                 show: false,
+                isExisting: false,
                 role: 'unknown',
                 bookingId: null,
                 claimUrl: '',
@@ -177,7 +179,10 @@ export default {
                 expiresAt: null,
                 isClaimed: false,
                 passengers: [],
+                trip: null,
+                contactPhone: '',
                 copyFeedback: '',
+                whatsAppError: '',
                 regenerating: false,
                 regenerationError: ''
             },
@@ -972,8 +977,16 @@ export default {
 
                 if (res.data?.handoff?.required) {
                     const h = res.data.handoff;
+                    const tId = f.bus_ticket_id;
+                    const ticket = (this.tickets || []).find(t => t.id == tId);
+                    const fromCity = f.pickup_city || ticket?.from_city || '—';
+                    const toCity = f.drop_off_city || ticket?.to_city || '—';
+                    const depDate = ticket?.departure_date ? this.formatDate(ticket.departure_date) : '—';
+                    const seatStr = f.passengers_data.map(p => p.seatNumber).filter(Boolean).join(', ');
+
                     this.handoffModal = {
                         show: true,
+                        isExisting: false,
                         role: h.contact_role || f.contact_role || 'unknown',
                         bookingId: res.data.id || res.data.booking_id,
                         ticketUrl: h.ticket_url,
@@ -985,7 +998,15 @@ export default {
                             seat: p.seatNumber,
                             phone: p.phone
                         })),
+                        trip: {
+                            fromCity: fromCity,
+                            toCity: toCity,
+                            departureDate: depDate,
+                            seats: seatStr
+                        },
+                        contactPhone: f.phone || (f.passengers_data[0] && f.passengers_data[0].phone) || '',
                         copyFeedback: '',
+                        whatsAppError: '',
                         regenerating: false,
                         regenerationError: ''
                     };
@@ -1139,6 +1160,14 @@ export default {
                 }];
             }
 
+            const tId = b.bus_ticket_id || p.bus_ticket_id || (p.originalBooking && p.originalBooking.bus_ticket_id);
+            const ticket = (this.tickets || []).find(t => t.id == tId);
+            const fromCity = p.pickupCity || b.pickup_city || ticket?.from_city || '—';
+            const toCity = p.dropOffCity || b.drop_off_city || ticket?.to_city || '—';
+            const depDate = ticket?.departure_date ? this.formatDate(ticket.departure_date) : '—';
+            const contactPhone = p.phone || b.passenger_phone || b.phone || (passengers[0] && passengers[0].phone) || '';
+            const seatStr = passengers.map(ps => ps.seat).filter(Boolean).join(', ') || p.seat || '—';
+
             this.handoffModal = {
                 show: true,
                 isExisting: true,
@@ -1149,7 +1178,15 @@ export default {
                 expiresAt: null,
                 isClaimed: false,
                 passengers: passengers,
+                trip: {
+                    fromCity: fromCity,
+                    toCity: toCity,
+                    departureDate: depDate,
+                    seats: seatStr
+                },
+                contactPhone: contactPhone,
                 copyFeedback: '',
+                whatsAppError: '',
                 regenerating: true,
                 regenerationError: ''
             };
@@ -1178,6 +1215,61 @@ export default {
                 }
             } finally {
                 this.handoffModal.regenerating = false;
+            }
+        },
+        sendHandoffViaWhatsApp() {
+            this.handoffModal.whatsAppError = '';
+            this.handoffModal.copyFeedback = '';
+
+            const phone = this.handoffModal.contactPhone || (this.handoffModal.passengers?.[0]?.phone) || '';
+            const ticketUrl = this.handoffModal.ticketUrl;
+
+            if (!ticketUrl) {
+                this.handoffModal.whatsAppError = 'Ссылка на билет ещё не готова.';
+                return;
+            }
+
+            const passengerNames = (this.handoffModal.passengers || [])
+                .map(p => p.name)
+                .filter(Boolean)
+                .join(', ');
+
+            const seats = (this.handoffModal.passengers || [])
+                .map(p => p.seat)
+                .filter(Boolean)
+                .join(', ') || this.handoffModal.trip?.seats || '—';
+
+            const message = formatWhatsAppHandoffMessage({
+                role: this.handoffModal.role,
+                name: passengerNames || 'Пассажир',
+                fromCity: this.handoffModal.trip?.fromCity || '—',
+                toCity: this.handoffModal.trip?.toCity || '—',
+                departureDate: this.handoffModal.trip?.departureDate || '—',
+                seats: seats,
+                ticketUrl: ticketUrl
+            });
+
+            const url = buildWhatsAppHandoffUrl({ phone, message });
+
+            if (!url) {
+                this.handoffModal.whatsAppError = 'Не удалось определить номер WhatsApp для этого контакта.';
+                return;
+            }
+
+            // Direct synchronous window.open for mobile Safari/Chrome popup safety
+            window.open(url, '_blank');
+
+            // Truthful feedback: never claim message was sent
+            this.handoffModal.copyFeedback = 'WhatsApp открыт. Проверьте сообщение и нажмите «Отправить».';
+            setTimeout(() => {
+                if (this.handoffModal) {
+                    this.handoffModal.copyFeedback = '';
+                }
+            }, 5000);
+        },
+        openHandoffTelegram() {
+            if (this.handoffModal.claimUrl) {
+                window.open(this.handoffModal.claimUrl, '_blank');
             }
         },
         async regenerateHandoffClaimLink() {
@@ -2670,35 +2762,56 @@ watch: {
 
                 <!-- Actions List -->
                 <div v-if="!handoffModal.regenerating || handoffModal.ticketUrl" class="space-y-3 pt-2">
-                    <!-- Action A: Copy Ticket Link -->
+                    <!-- Action 1: PRIMARY - Send via WhatsApp -->
+                    <button
+                        @click="sendHandoffViaWhatsApp"
+                        class="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-2xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-between"
+                    >
+                        <span class="flex items-center gap-2">
+                            <span>💬</span>
+                            <span>Отправить в WhatsApp</span>
+                        </span>
+                        <span class="text-emerald-100 text-[10px] font-bold">Основной способ</span>
+                    </button>
+
+                    <!-- Action 2: SECONDARY - Open in Telegram (only if unclaimed) -->
+                    <div v-if="!handoffModal.isClaimed && handoffModal.claimUrl" class="flex items-center gap-2">
+                        <button
+                            @click="openHandoffTelegram"
+                            class="flex-1 py-3.5 px-4 bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold text-xs rounded-2xl border border-sky-200 transition-all flex items-center justify-between"
+                        >
+                            <span class="flex items-center gap-2">
+                                <span>✈️</span>
+                                <span>Открыть в Telegram</span>
+                            </span>
+                            <span class="text-sky-500 text-[10px]">Бот</span>
+                        </button>
+                        <button
+                            @click="copyHandoffText(handoffModal.claimUrl, 'Ссылка для Telegram')"
+                            class="py-3.5 px-3 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-2xl border border-sky-200 text-xs font-bold transition-all"
+                            title="Скопировать ссылку для Telegram"
+                        >
+                            📋
+                        </button>
+                    </div>
+
+                    <!-- Action 3: UTILITY - Copy Link (canonical ticket URL) -->
                     <button
                         @click="copyHandoffText(handoffModal.ticketUrl, 'Ссылка на билет')"
-                        class="w-full py-3.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-2xl transition-all flex items-center justify-between"
+                        class="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-2xl transition-all flex items-center justify-between"
+                        title="Скопировать ссылку на билет"
                     >
                         <span class="flex items-center gap-2">
                             <span>🔗</span>
-                            <span>Скопировать ссылку на билет</span>
+                            <span>Скопировать ссылку</span>
                         </span>
-                        <span class="text-slate-400 text-[10px]">Веб-версия</span>
+                        <span class="text-slate-400 text-[10px]">Билет</span>
                     </button>
 
-                    <!-- Action B: Copy Telegram Claim Link (only if unclaimed) -->
-                    <button
-                        v-if="!handoffModal.isClaimed"
-                        @click="copyHandoffText(handoffModal.claimUrl, 'Ссылка для Telegram')"
-                        class="w-full py-3.5 px-4 bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold text-xs rounded-2xl border border-sky-200 transition-all flex items-center justify-between"
-                    >
-                        <span class="flex items-center gap-2">
-                            <span>✈️</span>
-                            <span>Скопировать ссылку для Telegram</span>
-                        </span>
-                        <span class="text-sky-500 text-[10px]">Для бота</span>
-                    </button>
-
-                    <!-- Action C: Open Ticket in View/Print -->
+                    <!-- Action 4: UTILITY - Open Ticket in View/Print -->
                     <button
                         @click="openHandoffTicket"
-                        class="w-full py-3.5 px-4 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs rounded-2xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2"
+                        class="w-full py-3 px-4 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs rounded-2xl shadow-md shadow-amber-500/20 transition-all flex items-center justify-center gap-2"
                     >
                         <span>🎫</span>
                         <span>Открыть билет</span>
@@ -2708,6 +2821,9 @@ watch: {
                 <!-- Toast / Feedback within modal -->
                 <div v-if="handoffModal.copyFeedback" class="text-center text-xs font-bold text-emerald-600 animate-fadeIn">
                     ✓ {{ handoffModal.copyFeedback }}
+                </div>
+                <div v-if="handoffModal.whatsAppError" class="text-center text-xs font-bold text-rose-600 animate-fadeIn">
+                    {{ handoffModal.whatsAppError }}
                 </div>
                 <div v-if="handoffModal.regenerationError" class="text-center text-xs font-bold text-rose-600 animate-fadeIn">
                     {{ handoffModal.regenerationError }}
