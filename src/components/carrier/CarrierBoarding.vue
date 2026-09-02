@@ -1,8 +1,12 @@
 <script>
 import api from '../../api';
+import CarrierBoardingScanner from './CarrierBoardingScanner.vue';
 
 export default {
     name: 'CarrierBoarding',
+    components: {
+        CarrierBoardingScanner
+    },
     props: {
         tickets: {
             type: Array,
@@ -24,6 +28,7 @@ export default {
             statusFilter: 'all', // 'all' | 'pending_boarding' | 'boarded' | 'no_show'
             searchQuery: '',
             updatingBookings: {}, // Map of bookingId -> boolean
+            showScanner: false,
             toast: {
                 show: false,
                 message: '',
@@ -255,6 +260,23 @@ export default {
                 this.updatingBookings[bookingId] = false;
             }
         },
+        openScanner() {
+            if (!this.selectedTicket) return;
+            this.showScanner = true;
+        },
+        handleScanResult(data) {
+            if (!data || !data.booking_id) return;
+
+            const parentBooking = this.bookings.find(b => b.id === data.booking_id);
+            if (parentBooking) {
+                parentBooking.boarding_status = data.boarding_status || 'boarded';
+                parentBooking.boarded_at = data.boarded_at || parentBooking.boarded_at;
+            }
+
+            if (!data.already_boarded) {
+                this.showToast('Пассажир отмечен: Посажен (QR)', 'success');
+            }
+        },
         showToast(msg, type = 'success') {
             this.toast = {
                 show: true,
@@ -341,6 +363,15 @@ export default {
                         📅 {{ formatDate(selectedTicket.departure_date) }} в {{ formatTime(selectedTicket.departure_time) }}
                     </div>
                 </div>
+
+                <!-- Primary Action: QR Scanner -->
+                <button
+                    @click="openScanner"
+                    class="w-full py-4 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-black text-base flex items-center justify-center gap-2.5 transition-all active:scale-98 shadow-lg shadow-slate-900/20"
+                >
+                    <span class="text-xl">📷</span>
+                    <span>Сканировать QR</span>
+                </button>
 
                 <!-- Interactive Filter Counter Badges -->
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -528,5 +559,14 @@ export default {
                 </div>
             </div>
         </div>
+
+        <!-- Fullscreen QR Scanner -->
+        <CarrierBoardingScanner
+            v-if="showScanner && selectedTicket"
+            :trip="selectedTicket"
+            :counts="counts"
+            @close="showScanner = false"
+            @boarded="handleScanResult"
+        />
     </div>
 </template>

@@ -131,6 +131,7 @@ export default {
             showScheduleConflictModal: false,
             scheduleConflicts: [],
             busErrors: {},
+            completionModal: { show: false, ticket: null, loading: false, error: '' },
             mobileMenuOpen: false,
             navItems: [
                 { id: 'dashboard', label: 'Обзор' },
@@ -659,17 +660,38 @@ export default {
                 this.loading = false;
             }
         },
-        async completeTicket(ticket) {
-            if (!confirm('Завершить этот рейс? Он больше не будет доступен для поиска.')) return;
-            this.loading = true;
+        // Phase E.47.1 — timezone-aware departure check (Asia/Dushanbe, matching
+        // the platform's business timezone; see backend utils/tripCompletionHelper.js).
+        hasTripDeparted(ticket) {
+            if (!ticket || !ticket.departure_date) return false;
+            const timeStr = (ticket.departure_time || '00:00').substring(0, 5);
+            const isoLocal = `${ticket.departure_date}T${timeStr}:00+05:00`;
+            const departureInstant = new Date(isoLocal);
+            if (isNaN(departureInstant.getTime())) return false;
+            return Date.now() >= departureInstant.getTime();
+        },
+        canCompleteTrip(ticket) {
+            return ticket.status === 'active' && this.hasTripDeparted(ticket);
+        },
+        completeTicket(ticket) {
+            this.completionModal = { show: true, ticket, loading: false, error: '' };
+        },
+        cancelCompleteTicket() {
+            if (this.completionModal.loading) return;
+            this.completionModal = { show: false, ticket: null, loading: false, error: '' };
+        },
+        async confirmCompleteTicket() {
+            const ticket = this.completionModal.ticket;
+            if (!ticket || this.completionModal.loading) return;
+            this.completionModal.loading = true;
+            this.completionModal.error = '';
             try {
-                await api.put(`/bus-admin/tickets/${ticket.id}`, { status: 'completed' });
-                this.fetchTickets();
+                await api.post(`/bus-admin/tickets/${ticket.id}/complete`);
+                this.completionModal = { show: false, ticket: null, loading: false, error: '' };
+                await Promise.all([this.fetchTickets(), this.fetchBookings()]);
             } catch (e) {
-                alert('Ошибка при завершении рейса');
-                console.error(e);
-            } finally {
-                this.loading = false;
+                this.completionModal.loading = false;
+                this.completionModal.error = e.response?.data?.error || 'Ошибка при завершении рейса';
             }
         },
         handleQuickRebook(customerData) {
@@ -2019,6 +2041,10 @@ watch: {
                                              <span>🔄</span>
                                              <span>Обратный</span>
                                          </button>
+                                         <button v-if="canCompleteTrip(ticket)" @click="completeTicket(ticket)" class="px-3 py-2.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-xl transition-all border border-emerald-100 flex items-center gap-1.5 text-xs font-bold" title="Завершить рейс">
+                                             <span>✓</span>
+                                             <span>Завершить рейс</span>
+                                         </button>
                                      </div>
                                      <div class="flex items-center space-x-2" v-else>
                                          <button @click="deleteTicket(ticket.id)" class="p-2.5 bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all border border-slate-100" title="Удалить">
@@ -2781,6 +2807,35 @@ watch: {
                     </button>
                     <button v-else @click="updateBusTicket(true)" class="flex-1 py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer">
                         Все равно сохранить
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phase E.47.1 Trip Completion Confirmation Modal -->
+        <div v-if="completionModal.show" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+            <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-center">
+                <div class="w-16 h-16 rounded-2xl bg-amber-100 text-amber-600 mx-auto flex items-center justify-center text-3xl">
+                    ⚠️
+                </div>
+                <div>
+                    <h3 class="text-lg font-bold text-slate-900">Завершить рейс?</h3>
+                    <p class="text-sm text-slate-500 mt-2">
+                        Пассажиры, которые не были отмечены как посаженные, будут отмечены как «Не явился».
+                    </p>
+                    <p v-if="completionModal.ticket" class="text-xs text-slate-400 mt-2 font-semibold">
+                        {{ completionModal.ticket.from_city }} → {{ completionModal.ticket.to_city }}
+                    </p>
+                </div>
+                <p v-if="completionModal.error" class="text-xs font-bold text-rose-600 bg-rose-50 rounded-xl p-2.5">
+                    {{ completionModal.error }}
+                </p>
+                <div class="flex gap-2 pt-2">
+                    <button @click="cancelCompleteTicket" :disabled="completionModal.loading" class="flex-1 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer disabled:opacity-50">
+                        Отмена
+                    </button>
+                    <button @click="confirmCompleteTicket" :disabled="completionModal.loading" class="flex-1 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50">
+                        {{ completionModal.loading ? 'Завершаем…' : 'Завершить рейс' }}
                     </button>
                 </div>
             </div>
