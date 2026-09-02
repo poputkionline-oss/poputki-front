@@ -918,12 +918,12 @@ export default {
 
             this.loading = true;
             try {
-                const ticket = this.tickets.find(t => t.id === f.bus_ticket_id);
+                const ticket = this.tickets.find(t => Number(t.id) === Number(f.bus_ticket_id));
                 if (!ticket) throw new Error('Рейс не найден');
 
                 // Validate against already reserved seats
-                const reserved = ticket.reserved_seats || [];
-                const conflicts = assignedSeats.filter(s => reserved.includes(s));
+                const reserved = (ticket.reserved_seats || []).map(s => Number(s)).filter(s => !isNaN(s));
+                const conflicts = assignedSeats.map(s => Number(s)).filter(s => reserved.includes(s));
                 if (conflicts.length > 0) {
                     alert(`Место(а) ${conflicts.join(', ')} уже занято. Выберите другое.`);
                     this.loading = false;
@@ -1102,13 +1102,15 @@ export default {
             return sortedManifest.filter(p => p.searchContext.includes(s));
         },
         currentBookingTicket() {
-            if (!this.bookingForm.bus_ticket_id) return null;
-            return this.tickets.find(t => t.id === this.bookingForm.bus_ticket_id) || null;
+            if (this.bookingForm.bus_ticket_id === null || this.bookingForm.bus_ticket_id === undefined || this.bookingForm.bus_ticket_id === '') return null;
+            const targetId = Number(this.bookingForm.bus_ticket_id);
+            if (isNaN(targetId)) return null;
+            return this.tickets.find(t => Number(t.id) === targetId) || null;
         },
         bookedSeatsForCurrentTicket() {
-            if (!this.bookingForm.bus_ticket_id) return [];
-            const ticket = this.tickets.find(t => t.id === this.bookingForm.bus_ticket_id);
-            return ticket ? ticket.reserved_seats || [] : [];
+            const ticket = this.currentBookingTicket;
+            if (!ticket || !Array.isArray(ticket.reserved_seats)) return [];
+            return ticket.reserved_seats.map(s => Number(s)).filter(s => !isNaN(s));
         },
         crmPassengers() {
             const manifest = [];

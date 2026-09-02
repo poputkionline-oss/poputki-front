@@ -203,32 +203,49 @@ export default {
         currentLayout() {
             if (this.busType === 'single') return this.singleFloorLayout;
             return this.currentFloor === 1 ? this.doubleFloor1Layout : this.doubleFloor2Layout;
+        },
+
+        normalizedBookedSeats() {
+            if (!Array.isArray(this.bookedSeats)) return [];
+            return this.bookedSeats.map(s => Number(s)).filter(s => !isNaN(s));
         }
     },
     methods: {
-        isSeatBooked(seatNum) { return this.bookedSeats.includes(seatNum); },
-        isSeatSelected(seatNum) { return this.selectedSeats.includes(seatNum); },
+        isSeatBooked(seatNum) {
+            const num = Number(seatNum);
+            if (isNaN(num)) return false;
+            return this.normalizedBookedSeats.includes(num);
+        },
+        isSeatSelected(seatNum) {
+            const num = Number(seatNum);
+            if (isNaN(num)) return false;
+            return (this.selectedSeats || []).some(s => Number(s) === num);
+        },
         isSeatPremium(seatNum) {
             if (this.busType !== 'double') return false;
-            return this.doubleDeckPremiumSeats.includes(seatNum);
+            const num = Number(seatNum);
+            if (isNaN(num)) return false;
+            return this.doubleDeckPremiumSeats.includes(num);
         },
         toggleSeat(seatNum) {
             if (this.isSeatBooked(seatNum)) return;
-            const idx = this.selectedSeats.indexOf(seatNum);
+            const num = Number(seatNum);
+            if (isNaN(num)) return;
+            const idx = (this.selectedSeats || []).findIndex(s => Number(s) === num);
             if (idx > -1) {
-                this.selectedSeats = this.selectedSeats.filter(s => s !== seatNum);
+                this.selectedSeats = this.selectedSeats.filter(s => Number(s) !== num);
             } else {
                 if (this.selectedSeats.length >= this.maxSelectable) {
-                    if (this.maxSelectable === 1) this.selectedSeats = [seatNum];
-                    else this.selectedSeats = [...this.selectedSeats.slice(1), seatNum];
+                    if (this.maxSelectable === 1) this.selectedSeats = [num];
+                    else this.selectedSeats = [...this.selectedSeats.slice(1), num];
                 } else {
-                    this.selectedSeats = [...this.selectedSeats, seatNum];
+                    this.selectedSeats = [...this.selectedSeats, num];
                 }
             }
         },
         handleDblClick(seatNum) {
             if (this.isSeatBooked(seatNum)) return;
-            this.$emit('seat-dblclick', seatNum);
+            this.$emit('seat-dblclick', Number(seatNum));
         },
         getSeatClass(seatNum) {
             if (this.isSeatBooked(seatNum)) return 'seat-booked';
