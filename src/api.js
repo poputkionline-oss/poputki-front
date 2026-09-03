@@ -3,16 +3,12 @@ import axios from 'axios';
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
     headers: {
-        'Content-Type': 'application/json',
-        'x-mana-man': 'nasa.2006'
+        'Content-Type': 'application/json'
     }
 });
 
-// Request interceptor to add Admin Token, Carrier JWT, Passenger Bearer Token, and Security Header
+// Request interceptor to add Admin Token, Carrier JWT, and Passenger Bearer Token
 api.interceptors.request.use(config => {
-    // Ensure security header is ALWAYS present
-    config.headers['x-mana-man'] = 'nasa.2006';
-
     const url = config.url || '';
 
     // Prevent token leakage to external third-party URLs

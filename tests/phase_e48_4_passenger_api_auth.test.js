@@ -12,8 +12,8 @@ import { resolve } from 'node:path';
 describe('Phase E.48.4 — Frontend Passenger API Auth Interceptors', () => {
     const apiSource = readFileSync(resolve('src/api.js'), 'utf-8');
 
-    it('[E48.4-F01] api.js preserves mandatory x-mana-man security header', () => {
-        assert.ok(apiSource.includes("config.headers['x-mana-man'] = 'nasa.2006'"));
+    it('[E48.4-F01] api.js does not contain legacy x-mana-man header', () => {
+        assert.equal(apiSource.includes('x-mana-man'), false);
     });
 
     it('[E48.4-F02] api.js attaches passenger Bearer token from localStorage.getItem("token")', () => {

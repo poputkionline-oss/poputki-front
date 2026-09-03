@@ -102,8 +102,7 @@ export async function ensureTelegramMiniAppAuth() {
             const response = await fetch(`${apiUrl}/auth/telegram-miniapp`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'x-mana-man': 'nasa.2006'
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     initData,
