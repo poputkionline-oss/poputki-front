@@ -419,7 +419,7 @@ export default {
             this.$router.replace('/auth');
             return;
         }
-        acquisitionService.trackBookingStarted(Number(this.ticketId));
+        acquisitionService.trackBookingStarted({ bus_ticket_id: Number(this.ticketId) });
         await this.fetchTicket();
         this.loadState();
     },

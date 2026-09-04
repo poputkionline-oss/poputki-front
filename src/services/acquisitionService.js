@@ -253,6 +253,11 @@ class AcquisitionService {
 
     /**
      * Emits LANDING_VIEWED once per acquisition session.
+     *
+     * Phase P.1G.3A contract-parity fix: the backend's client-event property
+     * allowlist only keeps 'page_path' for LANDING_VIEWED — the previous
+     * 'landing_path' key was silently stripped server-side, so every
+     * LANDING_VIEWED event ever sent recorded no path at all.
      */
     async trackLandingViewed() {
         try {
@@ -264,97 +269,179 @@ class AcquisitionService {
                 sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(this.sessionData));
             }
             await this.trackEvent('LANDING_VIEWED', {
-                landing_path: typeof window !== 'undefined' ? window.location.pathname : '/'
+                page_path: typeof window !== 'undefined' ? window.location.pathname : '/'
             });
         } catch (e) { }
     }
 
     /**
      * Emits ROUTE_SEARCHED after a valid route search is executed.
+     *
+     * Phase P.1G.3A contract-parity fix: the backend's client-event property
+     * allowlist expects 'from_city'/'to_city'/'departure_date' for
+     * ROUTE_SEARCHED — the previous 'from_city_id'/'to_city_id'/'travel_date'
+     * keys were silently stripped server-side (the values themselves are
+     * city name strings from $route.query, not numeric ids, despite the old
+     * call-site parameter naming), so every ROUTE_SEARCHED event ever sent
+     * recorded nothing. Call sites are unchanged; only the wire property
+     * names are corrected here.
      */
     async trackRouteSearched({ from_city_id, to_city_id, travel_date }) {
         if (!from_city_id || !to_city_id) return;
         await this.trackEvent('ROUTE_SEARCHED', {
-            from_city_id: Number(from_city_id) || null,
-            to_city_id: Number(to_city_id) || null,
-            travel_date: travel_date ? String(travel_date).slice(0, 10) : null
+            from_city: String(from_city_id).slice(0, 128),
+            to_city: String(to_city_id).slice(0, 128),
+            departure_date: travel_date ? String(travel_date).slice(0, 10) : null
         });
     }
 
     /**
-     * Emits TRIP_VIEWED when passenger views a specific trip or bus ticket card.
+     * Emits TRIP_VIEWED when passenger opens a specific trip/bus ticket page.
+     *
+     * Phase P.1G.3A: the backend's client-event property allowlist
+     * (services/acquisition/eventIngestionService.js EVENT_ALLOWED_PROPERTIES)
+     * only keeps 'trip_id' for TRIP_VIEWED — the previous 'bus_ticket_id' key
+     * was silently stripped server-side, so every TRIP_VIEWED event ever sent
+     * recorded no trip reference at all. Deduplicated per ticket per session
+     * (mirrors trackBookingStarted) so a remount of the details view for the
+     * same ticket (e.g. browser back/forward) doesn't record a second view.
      */
     async trackTripViewed({ trip_id, bus_ticket_id }) {
-        const id = bus_ticket_id || trip_id;
+        const id = Number(bus_ticket_id || trip_id) || null;
         if (!id) return;
-        await this.trackEvent('TRIP_VIEWED', {
-            bus_ticket_id: Number(id) || null
-        });
+
+        try {
+            if (this.sessionData) {
+                const sentFor = this.sessionData.tripViewedSentForTicketIds || [];
+                if (sentFor.includes(id)) return;
+                this.sessionData.tripViewedSentForTicketIds = [...sentFor, id];
+                sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(this.sessionData));
+            }
+        } catch (e) { /* storage unavailable — fall through and send anyway */ }
+
+        await this.trackEvent('TRIP_VIEWED', { trip_id: id });
     }
 
     /**
      * Emits BOOKING_STARTED when passenger proceeds to book a ticket.
+     *
+     * Deduplicated per bus_ticket_id per session (mirrors trackLandingViewed):
+     * the normal flow fires this from BOTH BusTicketDetailsView's "Book"
+     * click AND BusBookingView's own mount (the latter also covers direct/
+     * refreshed navigation straight into the booking flow) — without this
+     * guard, the common click-through path would double-count every real
+     * booking start.
      */
     async trackBookingStarted({ bus_ticket_id }) {
-        if (!bus_ticket_id) return;
-        await this.trackEvent('BOOKING_STARTED', {
-            bus_ticket_id: Number(bus_ticket_id) || null
-        });
+        const id = Number(bus_ticket_id) || null;
+        if (!id) return;
+
+        try {
+            if (this.sessionData) {
+                const sentFor = this.sessionData.bookingStartedSentForTicketIds || [];
+                if (sentFor.includes(id)) return;
+                this.sessionData.bookingStartedSentForTicketIds = [...sentFor, id];
+                sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(this.sessionData));
+            }
+        } catch (e) { /* storage unavailable — fall through and send anyway */ }
+
+        // Phase P.1G.3A: the backend's client-event property allowlist
+        // (services/acquisition/eventIngestionService.js EVENT_ALLOWED_PROPERTIES)
+        // only keeps 'trip_id' for BOOKING_STARTED — sending bus_ticket_id
+        // here would be silently stripped server-side, losing the reference
+        // entirely (a second, deeper bug behind the original Number-arg one).
+        await this.trackEvent('BOOKING_STARTED', { trip_id: id });
     }
 
     /**
      * Creates a Telegram link session (w_<token>) and opens the Telegram bot.
      *
+     * Phase P.1G.3A: the backend's client-event property allowlist
+     * (services/acquisition/eventIngestionService.js EVENT_ALLOWED_PROPERTIES)
+     * has no 'context' key for TELEGRAM_OPENED — it was silently stripped
+     * server-side. Renamed to the allowlisted target_channel/handoff_point
+     * pair; neither the raw handshake token nor the full deep-link URL (which
+     * embeds that token) is ever included, only a static safe label. Guarded
+     * against a double-fire from a rapid double-click while the first call is
+     * still in flight (this is a click handler, not a per-item view — there
+     * is no ticket/trip id to key a session dedup on).
+     *
      * @param {Object} [options]
      * @returns {Promise<string|null>} The deep link URL
      */
     async openTelegramBot() {
-        const visitorId = this.getOrCreateVisitorId();
-        let sessionId = this.sessionId;
+        if (this._telegramOpenInFlight) return this._telegramOpenInFlight;
 
-        if (!sessionId) {
-            sessionId = await this.initSession();
-        }
+        const run = async () => {
+            const visitorId = this.getOrCreateVisitorId();
+            let sessionId = this.sessionId;
 
-        try {
-            const res = await api.post('/acquisition/telegram-link-session', {
-                anonymous_visitor_id: visitorId,
-                session_id: sessionId
-            }, {
-                headers: { 'x-visitor-id': visitorId }
-            });
+            if (!sessionId) {
+                sessionId = await this.initSession();
+            }
 
-            const deepLink = res.data?.telegram_deep_link;
-            if (deepLink && typeof deepLink === 'string') {
-                // Record TELEGRAM_OPENED event without raw token in properties
-                await this.trackEvent('TELEGRAM_OPENED', {
-                    context: 'web_to_telegram_cta'
+            try {
+                const res = await api.post('/acquisition/telegram-link-session', {
+                    anonymous_visitor_id: visitorId,
+                    session_id: sessionId
+                }, {
+                    headers: { 'x-visitor-id': visitorId }
                 });
 
-                window.open(deepLink, '_blank');
-                return deepLink;
+                const deepLink = res.data?.telegram_deep_link;
+                if (deepLink && typeof deepLink === 'string') {
+                    // Fires only after a real handshake link was obtained, and
+                    // right before the actual handoff — never the token/URL itself.
+                    await this.trackEvent('TELEGRAM_OPENED', {
+                        target_channel: 'telegram_bot',
+                        handoff_point: 'web_to_telegram_cta'
+                    });
+
+                    window.open(deepLink, '_blank');
+                    return deepLink;
+                }
+            } catch (err) {
+                console.warn('[Acquisition] Telegram link session error:', err?.message || err);
+                // Safe fallback to direct bot
+                window.open('https://t.me/Poputkionline_bot', '_blank');
+                return 'https://t.me/Poputkionline_bot';
             }
-        } catch (err) {
-            console.warn('[Acquisition] Telegram link session error:', err?.message || err);
-            // Safe fallback to direct bot
-            window.open('https://t.me/Poputkionline_bot', '_blank');
-            return 'https://t.me/Poputkionline_bot';
+            return null;
+        };
+
+        this._telegramOpenInFlight = run();
+        try {
+            return await this._telegramOpenInFlight;
+        } finally {
+            this._telegramOpenInFlight = null;
         }
-        return null;
     }
 
     /**
      * Emits SHARE_CLICKED when user clicks a share button.
      *
+     * Phase P.1G.3A: property names match the backend's client-event
+     * allowlist exactly (services/acquisition/eventIngestionService.js
+     * EVENT_ALLOWED_PROPERTIES.SHARE_CLICKED = ['share_channel',
+     * 'target_content']) — the previous 'channel'/'context' keys were
+     * silently stripped server-side on every call, so no SHARE_CLICKED
+     * event ever actually recorded which channel was used.
+     *
      * @param {Object} params
      * @param {'telegram'|'whatsapp'|'copy'|'native_share'} params.channel
-     * @param {'trip'|'booking'|'referral'|'service'} params.context
+     * @param {string} [params.referral_code] The short, already-public
+     *   referral code embedded in the shared link (NOT a user ID — safe to
+     *   record; correlates the click with which link was shared). Sent as
+     *   target_content, the allowlisted "what was shared" slot.
      */
-    async trackShareClicked({ channel, context }) {
-        await this.trackEvent('SHARE_CLICKED', {
-            channel: String(channel || 'copy'),
-            context: String(context || 'service')
-        });
+    async trackShareClicked({ channel, referral_code }) {
+        const props = {
+            share_channel: String(channel || 'copy').slice(0, 32)
+        };
+        if (referral_code) {
+            props.target_content = String(referral_code).slice(0, 64);
+        }
+        await this.trackEvent('SHARE_CLICKED', props);
     }
 
     /**
