@@ -44,7 +44,8 @@ describe('PHASE P.1G.4 — ADMIN SOURCES & CAMPAIGNS UI SUITE', () => {
         const { descriptor } = parse(source);
 
         let scriptCode = descriptor.script.content
-            .replace(/import api from '\.\.\/\.\.\/api';/, 'const api = { get: async () => ({ data: {} }), post: async () => ({ data: {} }) };');
+            .replace(/import api from '\.\.\/\.\.\/api';/, 'const api = { get: async () => ({ data: {} }), post: async () => ({ data: {} }), patch: async () => ({ data: {} }) };')
+            .replace(/import\s*\{[^}]*\}\s*from\s*'\.\.\/\.\.\/utils\/qrExport\.js';/, 'const getQrSvg = () => "<svg></svg>"; const downloadSvg = () => {}; const downloadPng = () => {}; const copyToClipboard = async () => true;');
 
         const mod = { exports: {} };
         const fn = new Function('module', 'exports', scriptCode.replace('export default', 'module.exports ='));

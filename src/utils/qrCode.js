@@ -316,6 +316,35 @@ export function generateQRCodeSVG(text, size = 160) {
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" class="w-full h-full"><rect width="${size}" height="${size}" fill="#ffffff"/><path d="${path}" fill="#1e293b"/></svg>`;
 }
 
+export function getQRCodeMatrix(text) {
+    if (!text) return null;
+    let typeNumber = 1;
+    const len = encodeURI(text).length;
+    if (len <= 14) typeNumber = 1;
+    else if (len <= 26) typeNumber = 2;
+    else if (len <= 42) typeNumber = 3;
+    else if (len <= 62) typeNumber = 4;
+    else if (len <= 84) typeNumber = 5;
+    else if (len <= 106) typeNumber = 6;
+    else if (len <= 122) typeNumber = 7;
+    else typeNumber = 8;
+
+    const qr = new QRCodeModel(typeNumber);
+    try {
+        qr.make(text);
+    } catch {
+        qr.typeNumber = 8;
+        qr.moduleCount = 8 * 4 + 17;
+        qr.make(text);
+    }
+
+    return {
+        moduleCount: qr.moduleCount,
+        modules: qr.modules
+    };
+}
+
 export default {
-    generateQRCodeSVG
+    generateQRCodeSVG,
+    getQRCodeMatrix
 };
