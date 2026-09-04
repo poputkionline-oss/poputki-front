@@ -16,6 +16,7 @@ import {
 import { Line, Pie, Bar } from 'vue-chartjs';
 import * as XLSX from 'xlsx';
 import { exportPassengerManifestExcel, sortPassengersBySeat } from '../utils/excelExport';
+import AdminAcquisitionSources from '../components/admin/AdminAcquisitionSources.vue';
 
 ChartJS.register(
   Title, 
@@ -34,7 +35,8 @@ export default {
         LineChart: Line,
         PieChart: Pie,
         BarChart: Bar,
-        AppLogo
+        AppLogo,
+        AdminAcquisitionSources
     },
     data() {
         return {
@@ -98,6 +100,7 @@ export default {
             navItems: [
                 { id: 'dashboard', label: 'Дашборд' },
                 { id: 'passenger-funnel', label: 'Воронка пассажиров' },
+                { id: 'sources-campaigns', label: 'Источники и кампании' },
                 { id: 'users', label: 'Пользователи' },
                 { id: 'bus-drivers', label: 'Водители автобусов' },
                 { id: 'rides', label: 'Попутки' },
@@ -1211,6 +1214,8 @@ export default {
     mounted() {
         if (this.$route.name === 'admin-passenger-funnel' || this.$route.path === '/admin/passenger-funnel' || this.$route.query.tab === 'passenger-funnel') {
             this.activeTab = 'passenger-funnel';
+        } else if (this.$route.name === 'admin-sources-campaigns' || this.$route.path === '/admin/sources-campaigns' || this.$route.query.tab === 'sources-campaigns') {
+            this.activeTab = 'sources-campaigns';
         }
         if (this.isAuthenticated) {
             if (this.activeTab === 'passenger-funnel') {
@@ -1486,6 +1491,11 @@ export default {
                         </div>
                     </div>
                 </div>
+            </section>
+
+            <!-- Sources & Campaigns Section (Phase P.1G.4: Admin-Only Sources & Campaigns) -->
+            <section v-if="activeTab === 'sources-campaigns'">
+                <AdminAcquisitionSources />
             </section>
 
             <!-- Passenger Funnel Section (Phase P.1F: Admin-Only Activation Funnel) -->

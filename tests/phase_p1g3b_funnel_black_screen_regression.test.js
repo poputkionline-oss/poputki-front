@@ -48,6 +48,7 @@ describe('PHASE P.1G.3B — ADMIN PASSENGER FUNNEL REGRESSION SUITE', () => {
         let scriptCode = descriptor.script.content
             .replace(/import api from '\.\.\/api';/, 'const api = { get: async () => ({ data: {} }), post: async () => ({ data: {} }) };')
             .replace(/import AppLogo from '\.\.\/components\/AppLogo\.vue';/, 'const AppLogo = { template: "<div></div>" };')
+            .replace(/import AdminAcquisitionSources from '\.\.\/components\/admin\/AdminAcquisitionSources\.vue';/, 'const AdminAcquisitionSources = { template: "<div></div>" };')
             .replace(/import \* as XLSX from 'xlsx';/, 'const XLSX = {};')
             .replace(/import ExcelJS from 'exceljs';/, 'const ExcelJS = {};')
             .replace(/import \{.*?\} from '\.\.\/utils\/excelExport';/, 'const exportPassengerManifestExcel = () => {}, sortPassengersBySeat = () => {};')

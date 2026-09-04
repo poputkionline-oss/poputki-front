@@ -114,6 +114,12 @@ const router = createRouter({
             meta: { hideBottomNav: true }
         },
         {
+            path: '/admin/sources-campaigns',
+            name: 'admin-sources-campaigns',
+            component: () => import('../views/AdminView.vue'),
+            meta: { hideBottomNav: true }
+        },
+        {
             path: '/payment-result',
             name: 'payment-result',
             component: () => import('../views/PaymentResultView.vue'),
