@@ -175,7 +175,13 @@ class AcquisitionService {
                     referral_code: urlAttr.referralCode,
                     referrer: typeof document !== 'undefined' ? document.referrer : null,
                     utm: urlAttr.utm,
-                    landing_path: typeof window !== 'undefined' ? window.location.pathname : '/'
+                    landing_path: typeof window !== 'undefined' ? window.location.pathname : '/',
+                    // Client-asserted signal only (same trust tier as UTM, not
+                    // cryptographically verified) - lets the backend record a
+                    // known 'telegram' source_platform for sessions opened via
+                    // the bot's Mini App button when no referral/tracked-link/
+                    // UTM attribution already resolved one.
+                    is_telegram_webapp: Boolean(typeof window !== 'undefined' && window.Telegram?.WebApp)
                 };
 
                 const res = await api.post('/acquisition/session', payload, {

@@ -3,10 +3,20 @@ import api from '../api';
 import { getTelegramUser, getTelegramInitData } from '../telegram';
 import acquisitionService from '../services/acquisitionService';
 
+// Resolves the ?tab= deep-link query param to a known tab state via an
+// explicit allowlist. 'bus' (singular) is the established deep-link value
+// (e.g. from the Telegram bot's Mini App button); 'buses' is the internal
+// state value used throughout this component's own template. Anything else
+// (missing, unrecognized) safely falls back to 'buses', never left blank.
+function resolveActiveTab(queryTab) {
+  if (queryTab === 'rides') return 'rides';
+  return 'buses';
+}
+
 export default {
   data() {
     return {
-      activeTab: this.$route.query.tab || 'buses', // 'rides' | 'buses'
+      activeTab: resolveActiveTab(this.$route.query.tab), // 'rides' | 'buses'
       rides: [],
       busTickets: [],
       fromCity: this.$route.query.from || '',
@@ -174,8 +184,6 @@ export default {
   },
   mounted() {
     // Check for success notification from redirect
-    const queryTab = this.$route.query.tab;
-    if (queryTab === 'bus') this.activeTab = 'buses';
     if (this.$route.query.success === 'true') {
       this.successMessage = this.$route.query.message || 'Операция выполнена!';
       this.showSuccessNotify = true;
