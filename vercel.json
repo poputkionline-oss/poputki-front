@@ -1,6 +1,14 @@
 {
     "rewrites": [
         {
+            "source": "/l/:token",
+            "destination": "https://poputki-backend-9dv6.onrender.com/l/:token"
+        },
+        {
+            "source": "/r/:code",
+            "destination": "https://poputki-backend-9dv6.onrender.com/r/:code"
+        },
+        {
             "source": "/(.*)",
             "destination": "/index.html"
         }

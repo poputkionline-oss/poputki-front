@@ -1175,6 +1175,19 @@
               Загрузка ссылок кампании...
             </div>
 
+            <div v-else-if="campaignLinksError" class="p-6 bg-rose-50 border border-rose-100 rounded-xl text-center space-y-3">
+              <p class="text-xs font-bold text-rose-700">{{ campaignLinksError }}</p>
+              <button 
+                @click="loadCampaignLinks(selectedCampaign)"
+                class="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5 shadow-sm"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Повторить
+              </button>
+            </div>
+
             <div v-else-if="campaignLinks.length === 0" class="p-8 bg-slate-50 rounded-xl text-center text-slate-400 text-xs">
               У этой кампании пока нет выпущенных ссылок. Нажмите «Создать ещё ссылку».
             </div>
@@ -1603,6 +1616,7 @@ export default {
       selectedCampaign: null,
       campaignLinks: [],
       campaignLinksLoading: false,
+      campaignLinksError: null,
       sessionLinksMap: {}, // Map of link.id -> public_url created in this browser session
 
       // Add New Link Modal
@@ -1916,20 +1930,44 @@ export default {
     },
 
     // Campaign Details & Links
+    // Campaign Details & Links
     async openCampaignDetails(campaign) {
       this.selectedCampaign = campaign;
       this.showCampaignDetailsModal = true;
+      await this.loadCampaignLinks(campaign);
+    },
+    async loadCampaignLinks(campaign) {
+      const camp = campaign || this.selectedCampaign;
+      const campaignId = camp?.id || camp?.campaign_id;
+      if (!campaignId) {
+        this.campaignLinksError = 'Кампания не найдена';
+        this.showToast('Кампания не найдена', 'error');
+        return;
+      }
       this.campaignLinksLoading = true;
+      this.campaignLinksError = null;
       try {
-        const res = await api.get(`/admin/acquisition/campaigns/${campaign.id}/links`);
+        const res = await api.get(`/admin/acquisition/campaigns/${campaignId}/links`);
         this.campaignLinks = Array.isArray(res.data.links) ? res.data.links : [];
       } catch (err) {
-        this.showToast('Не удалось загрузить ссылки кампании', 'error');
+        const status = err?.response?.status;
+        if (status === 401) {
+          this.campaignLinksError = 'Сессия администратора истекла — войдите снова';
+          this.showToast('Сессия администратора истекла — войдите снова', 'error');
+        } else if (status === 404) {
+          this.campaignLinksError = 'Кампания не найдена';
+          this.showToast('Кампания не найдена', 'error');
+        } else {
+          this.campaignLinksError = 'Не удалось загрузить ссылки. Повторите попытку';
+          this.showToast('Не удалось загрузить ссылки. Повторите попытку', 'error');
+        }
       } finally {
         this.campaignLinksLoading = false;
       }
     },
     promptToggleCampaignStatus(c) {
+      const campaignId = c?.id || c?.campaign_id;
+      if (!campaignId) return;
       const nextActive = !c.is_active;
       this.confirmModal = {
         show: true,
@@ -1939,9 +1977,10 @@ export default {
           : `Кампания «${c.name}» будет приостановлена. Новые переходы не будут регистрироваться.`,
         action: async () => {
           try {
-            await api.patch(`/admin/acquisition/campaigns/${c.id}/status`, { is_active: nextActive });
+            await api.patch(`/admin/acquisition/campaigns/${campaignId}/status`, { is_active: nextActive });
             c.is_active = nextActive;
-            if (this.selectedCampaign && this.selectedCampaign.id === c.id) {
+            const selId = this.selectedCampaign?.id || this.selectedCampaign?.campaign_id;
+            if (selId === campaignId) {
               this.selectedCampaign.is_active = nextActive;
             }
             this.showToast(nextActive ? 'Кампания возобновлена' : 'Кампания приостановлена');
@@ -1958,7 +1997,7 @@ export default {
         link.is_active = nextActive;
         this.showToast(nextActive ? 'Ссылка активирована' : 'Ссылка отключена');
       } catch (e) {
-        this.showToast('Ошибка изменения статуса ссылки', 'error');
+        this.showToast('Ссылка недоступна или отключена', 'error');
       }
     },
     openAddLinkModal() {
@@ -1973,7 +2012,11 @@ export default {
       this.showAddLinkModal = true;
     },
     async submitNewLink() {
-      if (!this.selectedCampaign) return;
+      const campaignId = this.selectedCampaign?.id || this.selectedCampaign?.campaign_id;
+      if (!campaignId) {
+        this.newLinkError = 'Кампания не найдена';
+        return;
+      }
       this.newLinkSubmitting = true;
       this.newLinkError = null;
 
@@ -1988,7 +2031,7 @@ export default {
           source_medium: this.selectedCampaign.source_medium
         };
 
-        const res = await api.post(`/admin/acquisition/campaigns/${this.selectedCampaign.id}/links`, payload);
+        const res = await api.post(`/admin/acquisition/campaigns/${campaignId}/links`, payload);
         const { link, public_url } = res.data;
 
         this.sessionLinksMap[link.id] = public_url;

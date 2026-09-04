@@ -142,6 +142,34 @@ const router = createRouter({
             name: 'ticket-preview',
             component: () => import('../views/TicketPreviewView.vue'),
             meta: { hideBottomNav: true }
+        },
+        {
+            path: '/l/:token',
+            name: 'tracked-link-redirect',
+            beforeEnter(to) {
+                if (typeof window !== 'undefined') {
+                    const apiBase = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || 'https://poputki-backend-9dv6.onrender.com/api';
+                    const backendHost = apiBase.replace(/\/api\/?$/, '');
+                    const targetUrl = `${backendHost}/l/${encodeURIComponent(to.params.token)}${window.location.search || ''}`;
+                    if (window.location.href !== targetUrl) {
+                        window.location.replace(targetUrl);
+                    }
+                }
+            }
+        },
+        {
+            path: '/r/:code',
+            name: 'referral-link-redirect',
+            beforeEnter(to) {
+                if (typeof window !== 'undefined') {
+                    const apiBase = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || 'https://poputki-backend-9dv6.onrender.com/api';
+                    const backendHost = apiBase.replace(/\/api\/?$/, '');
+                    const targetUrl = `${backendHost}/r/${encodeURIComponent(to.params.code)}${window.location.search || ''}`;
+                    if (window.location.href !== targetUrl) {
+                        window.location.replace(targetUrl);
+                    }
+                }
+            }
         }
     ],
     scrollBehavior(to, from, savedPosition) {
@@ -224,7 +252,7 @@ router.beforeEach(async (to, from, next) => {
     const isAuthenticated = !!localStorage.getItem('token');
     user = JSON.parse(localStorage.getItem('user')); // Re-fetch after possible sync
     const isComplete = isProfileComplete(user);
-    const publicRoutes = ['auth', 'admin', 'admin-passenger-funnel', 'bus-admin', 'ride-details', 'landing', 'search', 'payment-result', 'ticket-verification', 'ticket-verify-alias', 'ticket-preview', 'terms'];
+    const publicRoutes = ['auth', 'admin', 'admin-passenger-funnel', 'bus-admin', 'ride-details', 'landing', 'search', 'payment-result', 'ticket-verification', 'ticket-verify-alias', 'ticket-preview', 'terms', 'tracked-link-redirect', 'referral-link-redirect'];
 
     if (!publicRoutes.includes(to.name)) {
         if (!isAuthenticated || !isComplete) {
