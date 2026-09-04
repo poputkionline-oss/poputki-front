@@ -104,6 +104,150 @@ describe('Phase P.1G.3A — real trackBookingStarted() behavior', () => {
     });
 });
 
+describe('Phase P.1G.3A — real trackTripViewed() behavior', () => {
+    let posted;
+
+    beforeEach(() => {
+        posted = [];
+        api.post = async (url, body) => { posted.push({ url, body }); return { data: {} }; };
+        sessionStorage.clear();
+        acquisitionService.sessionId = 'test-session-id';
+        acquisitionService.sessionData = { session_id: 'test-session-id' };
+    });
+
+    it('sends trip_id (the backend-allowlisted property name), not bus_ticket_id', async () => {
+        await acquisitionService.trackTripViewed({ bus_ticket_id: 5150 });
+
+        const call = posted.find(p => p.url === '/acquisition/events');
+        assert.ok(call, 'must POST to /acquisition/events');
+        const event = call.body.events[0];
+        assert.equal(event.event_name, 'TRIP_VIEWED');
+        assert.equal(event.properties.trip_id, 5150);
+        assert.equal('bus_ticket_id' in event.properties, false, 'bus_ticket_id would be silently stripped server-side — must not be sent');
+    });
+
+    it('this is the exact call shape BusTicketDetailsView.vue uses after a real ticket fetch resolves', async () => {
+        const fs = await import('node:fs');
+        const src = fs.readFileSync(new URL('../src/views/BusTicketDetailsView.vue', import.meta.url), 'utf8');
+        // Real server response assigned to this.ticket, then the tracked id
+        // is read back off that same object — never a client-side route param.
+        assert.ok(/this\.ticket\s*=\s*res\.data;[\s\S]{0,120}trackTripViewed\(\{\s*bus_ticket_id:\s*this\.ticket\.id\s*\}\)/.test(src),
+            'trackTripViewed must be called with the id from the real fetched ticket (res.data), after the fetch resolves');
+    });
+
+    it('does nothing (no POST) when the id is missing/falsy', async () => {
+        await acquisitionService.trackTripViewed({});
+        assert.equal(posted.length, 0);
+    });
+
+    it('is deduplicated per ticket per session: a remount/second view of the same ticket does not re-fire', async () => {
+        await acquisitionService.trackTripViewed({ bus_ticket_id: 321 });
+        assert.equal(posted.length, 1);
+
+        await acquisitionService.trackTripViewed({ bus_ticket_id: 321 });
+        assert.equal(posted.length, 1, 'a second view of the same ticket in the same session must be a no-op');
+    });
+
+    it('still fires for a DIFFERENT ticket in the same session', async () => {
+        await acquisitionService.trackTripViewed({ bus_ticket_id: 111 });
+        await acquisitionService.trackTripViewed({ bus_ticket_id: 222 });
+        const ids = posted.filter(p => p.url === '/acquisition/events').map(p => p.body.events[0].properties.trip_id);
+        assert.deepEqual(ids, [111, 222]);
+    });
+});
+
+describe('Phase P.1G.3A — real openTelegramBot() / TELEGRAM_OPENED behavior', () => {
+    let posted, sequence;
+
+    beforeEach(() => {
+        posted = [];
+        sequence = [];
+        window.open = (url) => { sequence.push({ type: 'window.open', url }); };
+        acquisitionService.visitorId = 'test-visitor-id';
+        acquisitionService.sessionId = 'test-session-id';
+        acquisitionService.sessionData = { session_id: 'test-session-id' };
+        acquisitionService.initPromise = Promise.resolve('test-session-id');
+        acquisitionService._telegramOpenInFlight = null;
+    });
+
+    it('fires TELEGRAM_OPENED with only the allowlisted, safe context — never the raw token or full deep-link URL — strictly before the handoff', async () => {
+        const rawToken = 'w_SUPER_SECRET_HANDSHAKE_TOKEN_ABC123';
+        const deepLink = `https://t.me/Poputkionline_bot?start=${rawToken}`;
+        api.post = async (url, body) => {
+            posted.push({ url, body });
+            sequence.push({ type: 'api.post', url });
+            if (url === '/acquisition/telegram-link-session') {
+                return { data: { telegram_deep_link: deepLink } };
+            }
+            return { data: {} };
+        };
+
+        const result = await acquisitionService.openTelegramBot();
+
+        assert.equal(result, deepLink);
+
+        const eventCall = posted.find(p => p.url === '/acquisition/events');
+        assert.ok(eventCall, 'must record TELEGRAM_OPENED after obtaining the handshake link');
+        const event = eventCall.body.events[0];
+        assert.equal(event.event_name, 'TELEGRAM_OPENED');
+        assert.equal(event.properties.target_channel, 'telegram_bot');
+        assert.equal(event.properties.handoff_point, 'web_to_telegram_cta');
+        assert.equal('context' in event.properties, false, 'context would be silently stripped server-side — must not be sent');
+
+        const propsStr = JSON.stringify(event.properties);
+        assert.ok(!propsStr.includes(rawToken), 'must never include the raw handshake token');
+        assert.ok(!propsStr.includes('t.me/'), 'must never include the full Telegram deep-link URL');
+
+        // Real ordering proof: handshake fetch -> event recorded -> THEN the handoff opens.
+        const types = sequence.map(s => s.type + (s.url ? ':' + s.url : ''));
+        assert.deepEqual(types, [
+            'api.post:/acquisition/telegram-link-session',
+            'api.post:/acquisition/events',
+            'window.open:' + deepLink
+        ], 'TELEGRAM_OPENED must be recorded strictly after the handshake link is obtained and strictly before window.open');
+    });
+
+    it('does NOT fire TELEGRAM_OPENED when no handshake link was obtained (network error, safe fallback path)', async () => {
+        api.post = async (url) => {
+            posted.push({ url });
+            if (url === '/acquisition/telegram-link-session') {
+                throw new Error('network down');
+            }
+            return { data: {} };
+        };
+
+        const result = await acquisitionService.openTelegramBot();
+
+        assert.equal(result, 'https://t.me/Poputkionline_bot');
+        const eventCall = posted.find(p => p.url === '/acquisition/events');
+        assert.equal(eventCall, undefined, 'must not fabricate a TELEGRAM_OPENED event when the real handshake never succeeded');
+    });
+
+    it('a rapid double-click does not record TELEGRAM_OPENED twice', async () => {
+        const deepLink = 'https://t.me/Poputkionline_bot?start=w_tok';
+        let callCount = 0;
+        api.post = async (url, body) => {
+            posted.push({ url, body });
+            if (url === '/acquisition/telegram-link-session') {
+                callCount += 1;
+                return { data: { telegram_deep_link: deepLink } };
+            }
+            return { data: {} };
+        };
+
+        const [first, second] = await Promise.all([
+            acquisitionService.openTelegramBot(),
+            acquisitionService.openTelegramBot()
+        ]);
+
+        assert.equal(first, deepLink);
+        assert.equal(second, deepLink);
+        assert.equal(callCount, 1, 'a concurrent second click while the first is in flight must not start a second handshake');
+        const events = posted.filter(p => p.url === '/acquisition/events' && p.body.events[0].event_name === 'TELEGRAM_OPENED');
+        assert.equal(events.length, 1, 'must record TELEGRAM_OPENED exactly once for the double-click');
+    });
+});
+
 describe('Phase P.1G.3A — real trackShareClicked() behavior', () => {
     let posted;
 
