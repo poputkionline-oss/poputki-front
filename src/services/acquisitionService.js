@@ -294,12 +294,33 @@ class AcquisitionService {
 
     /**
      * Emits BOOKING_STARTED when passenger proceeds to book a ticket.
+     *
+     * Deduplicated per bus_ticket_id per session (mirrors trackLandingViewed):
+     * the normal flow fires this from BOTH BusTicketDetailsView's "Book"
+     * click AND BusBookingView's own mount (the latter also covers direct/
+     * refreshed navigation straight into the booking flow) — without this
+     * guard, the common click-through path would double-count every real
+     * booking start.
      */
     async trackBookingStarted({ bus_ticket_id }) {
-        if (!bus_ticket_id) return;
-        await this.trackEvent('BOOKING_STARTED', {
-            bus_ticket_id: Number(bus_ticket_id) || null
-        });
+        const id = Number(bus_ticket_id) || null;
+        if (!id) return;
+
+        try {
+            if (this.sessionData) {
+                const sentFor = this.sessionData.bookingStartedSentForTicketIds || [];
+                if (sentFor.includes(id)) return;
+                this.sessionData.bookingStartedSentForTicketIds = [...sentFor, id];
+                sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(this.sessionData));
+            }
+        } catch (e) { /* storage unavailable — fall through and send anyway */ }
+
+        // Phase P.1G.3A: the backend's client-event property allowlist
+        // (services/acquisition/eventIngestionService.js EVENT_ALLOWED_PROPERTIES)
+        // only keeps 'trip_id' for BOOKING_STARTED — sending bus_ticket_id
+        // here would be silently stripped server-side, losing the reference
+        // entirely (a second, deeper bug behind the original Number-arg one).
+        await this.trackEvent('BOOKING_STARTED', { trip_id: id });
     }
 
     /**
@@ -346,15 +367,28 @@ class AcquisitionService {
     /**
      * Emits SHARE_CLICKED when user clicks a share button.
      *
+     * Phase P.1G.3A: property names match the backend's client-event
+     * allowlist exactly (services/acquisition/eventIngestionService.js
+     * EVENT_ALLOWED_PROPERTIES.SHARE_CLICKED = ['share_channel',
+     * 'target_content']) — the previous 'channel'/'context' keys were
+     * silently stripped server-side on every call, so no SHARE_CLICKED
+     * event ever actually recorded which channel was used.
+     *
      * @param {Object} params
      * @param {'telegram'|'whatsapp'|'copy'|'native_share'} params.channel
-     * @param {'trip'|'booking'|'referral'|'service'} params.context
+     * @param {string} [params.referral_code] The short, already-public
+     *   referral code embedded in the shared link (NOT a user ID — safe to
+     *   record; correlates the click with which link was shared). Sent as
+     *   target_content, the allowlisted "what was shared" slot.
      */
-    async trackShareClicked({ channel, context }) {
-        await this.trackEvent('SHARE_CLICKED', {
-            channel: String(channel || 'copy'),
-            context: String(context || 'service')
-        });
+    async trackShareClicked({ channel, referral_code }) {
+        const props = {
+            share_channel: String(channel || 'copy').slice(0, 32)
+        };
+        if (referral_code) {
+            props.target_content = String(referral_code).slice(0, 64);
+        }
+        await this.trackEvent('SHARE_CLICKED', props);
     }
 
     /**
