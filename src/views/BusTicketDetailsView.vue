@@ -3,6 +3,7 @@ import api from '../api';
 import AppModal from '../components/AppModal.vue';
 import { openPhone, copyToClipboard } from '../telegram';
 import AppToast from '../components/AppToast.vue';
+import acquisitionService from '../services/acquisitionService';
 
 export default {
     name: 'BusTicketDetailsView',
@@ -79,6 +80,9 @@ export default {
                 console.log(`[DEBUG] Fetching bus ticket from: ${api.defaults.baseURL}${url}`);
                 const res = await api.get(url);
                 this.ticket = res.data;
+                if (this.ticket?.id) {
+                    acquisitionService.trackTripViewed({ bus_ticket_id: this.ticket.id });
+                }
             } catch (e) {
                 console.error('Bus ticket fetch error:', e);
                 const status = e.response?.status || 'Network Error';
@@ -90,6 +94,9 @@ export default {
         },
         startBooking() {
             if (!this.user) { this.$router.push('/auth'); return; }
+            if (this.ticket?.id) {
+                acquisitionService.trackBookingStarted({ bus_ticket_id: this.ticket.id });
+            }
             this.$router.push({ name: 'bus-booking', params: { id: this.ticket.id, step: 1 } });
         },
         formatDate(dateStr) {

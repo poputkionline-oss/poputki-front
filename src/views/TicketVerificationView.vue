@@ -11,7 +11,8 @@ export default {
             ticket: null,
             claiming: false,
             claimError: null,
-            telegramDeepLink: null
+            telegramDeepLink: null,
+            openTracked: false
         };
     },
     computed: {
@@ -51,6 +52,27 @@ export default {
         }
     },
     methods: {
+        async trackTicketOpen() {
+            // Carrier preview check: DO NOT track if carrier is previewing
+            if (this.$route.query.preview === 'carrier') {
+                return;
+            }
+            if (this.openTracked) {
+                return;
+            }
+            this.openTracked = true;
+            try {
+                const handoffId = this.$route.query.h || null;
+                // Zero PII: only pass ticketToken and handoffId
+                await api.post('/claims/track-open', {
+                    ticketToken: this.token,
+                    handoffId
+                });
+            } catch (err) {
+                // Tracking failure must never break ticket display or UX
+                console.warn('[Ticket] track-open failed non-blockingly:', err?.message || err);
+            }
+        },
         async verifyTicket() {
             if (!this.token) {
                 this.error = 'Отсутствует токен проверки';
@@ -65,6 +87,8 @@ export default {
                 const res = await api.get(`/bus-tickets/verify/${this.token}`);
                 if (res.data && res.data.valid && res.data.ticket) {
                     this.ticket = res.data.ticket;
+                    // Trigger journey open tracking after successful verified ticket display
+                    this.trackTicketOpen();
                 } else {
                     this.error = res.data?.error || 'Билет не найден';
                 }
@@ -103,9 +127,11 @@ export default {
             try {
                 const token = this.$route.params.token;
                 const bookingId = this.ticket?.bookingId;
+                const handoffId = this.$route.query.h || null;
                 const res = await api.post('/claims/start-session', {
                     ticketVerificationToken: token,
-                    bookingId
+                    bookingId,
+                    handoffId
                 });
                 const deepLink = res.data?.deepLink;
                 if (typeof deepLink !== 'string' || !deepLink.startsWith('https://t.me/')) {

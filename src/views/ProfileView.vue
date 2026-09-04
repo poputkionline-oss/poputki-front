@@ -1,6 +1,7 @@
 <script>
 import api from '../api';
 import { getTelegramUser } from '../telegram';
+import acquisitionService from '../services/acquisitionService';
 
 export default {
     data() {
@@ -12,7 +13,16 @@ export default {
             stats: {
                 passenger: 0,
                 driver: 0
-            }
+            },
+            referral: {
+                code: '',
+                url: '',
+                invitedCount: 0,
+                loading: false
+            },
+            marketingConsent: false,
+            consentLoading: false,
+            copySuccess: false
         }
     },
     computed: {
@@ -21,7 +31,9 @@ export default {
         }
     },
     async mounted() {
-        this.fetchProfile();
+        await this.fetchProfile();
+        this.fetchReferralLink();
+        this.fetchMarketingConsent();
     },
     methods: {
         async fetchProfile() {
@@ -47,6 +59,107 @@ export default {
                 this.vehicle = res.data;
             } catch (e) {
                 console.error(e);
+            }
+        },
+        async fetchReferralLink() {
+            if (!this.user?.id) return;
+            this.referral.loading = true;
+            try {
+                const res = await api.post('/referrals/link');
+                if (res.data?.referral_code) {
+                    this.referral.code = res.data.referral_code;
+                    this.referral.url = res.data.referral_url;
+                }
+                const meRes = await api.get('/referrals/me');
+                if (meRes.data?.total_invitees !== undefined) {
+                    this.referral.invitedCount = meRes.data.total_invitees;
+                }
+            } catch (e) {
+                console.error('[Referral] Fetch link error:', e);
+            } finally {
+                this.referral.loading = false;
+            }
+        },
+        async fetchMarketingConsent() {
+            if (!this.user?.id) return;
+            try {
+                const res = await api.get('/marketing-consents/me');
+                const list = res.data?.consents || [];
+                const active = list.some(c => c.status === 'granted');
+                this.marketingConsent = Boolean(active);
+            } catch (e) {
+                console.error('[Consent] Fetch error:', e);
+            }
+        },
+        async toggleMarketingConsent() {
+            this.consentLoading = true;
+            try {
+                if (this.marketingConsent) {
+                    await api.post('/marketing-consents', {
+                        channel: 'all',
+                        purpose: 'promotions',
+                        consent_source: 'profile_settings'
+                    });
+                } else {
+                    await api.post('/marketing-consents/revoke', {
+                        channel: 'all',
+                        purpose: 'promotions'
+                    });
+                }
+            } catch (e) {
+                console.error('[Consent] Update error:', e);
+                this.marketingConsent = !this.marketingConsent;
+            } finally {
+                this.consentLoading = false;
+            }
+        },
+        copyReferralLink() {
+            if (!this.referral.url) return;
+            navigator.clipboard?.writeText(this.referral.url);
+            this.copySuccess = true;
+            setTimeout(() => { this.copySuccess = false; }, 2000);
+            acquisitionService.trackShareClicked({
+                referral_code: this.referral.code,
+                channel: 'clipboard'
+            });
+        },
+        shareWhatsApp() {
+            if (!this.referral.url) return;
+            const text = encodeURIComponent(`Привет! Забронируй поездку или билет на POPUTKI.ONLINE: ${this.referral.url}`);
+            window.open(`https://wa.me/?text=${text}`, '_blank');
+            acquisitionService.trackShareClicked({
+                referral_code: this.referral.code,
+                channel: 'whatsapp'
+            });
+        },
+        shareTelegram() {
+            if (!this.referral.url) return;
+            const url = encodeURIComponent(this.referral.url);
+            const text = encodeURIComponent('Поездки между городами и билеты на автобусы на POPUTKI.ONLINE');
+            window.open(`https://t.me/share/url?url=${url}&text=${text}`, '_blank');
+            acquisitionService.trackShareClicked({
+                referral_code: this.referral.code,
+                channel: 'telegram'
+            });
+        },
+        async shareNative() {
+            if (!this.referral.url) return;
+            if (navigator.share) {
+                try {
+                    await navigator.share({
+                        title: 'POPUTKI.ONLINE',
+                        text: 'Поездки между городами и билеты на автобусы на POPUTKI.ONLINE',
+                        url: this.referral.url
+                    });
+                    acquisitionService.trackShareClicked({
+                        referral_code: this.referral.code,
+                        channel: 'native_share'
+                    });
+                } catch {
+                    // User cancelled share dialog
+                }
+            } else {
+                this.copyReferralLink();
             }
         },
         logout() {
@@ -199,6 +312,67 @@ export default {
           </div>
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
         </button>
+      </div>
+
+      <!-- Referral Program Card -->
+      <div class="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-[32px] p-5 text-white shadow-lg shadow-teal-500/10">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center space-x-2">
+            <span class="text-xl">🎁</span>
+            <h3 class="font-bold text-lg">Рекомендовать друзьям</h3>
+          </div>
+          <span v-if="referral.invitedCount > 0" class="text-xs bg-white/20 px-2.5 py-1 rounded-full font-semibold">
+            Приглашено: {{ referral.invitedCount }}
+          </span>
+        </div>
+        <p class="text-xs text-white/90 mb-4 leading-relaxed">
+          Поделитесь вашей ссылкой на POPUTKI.ONLINE. Ваши друзья откроют удобный сервис поездок и автобусных билетов!
+        </p>
+
+        <div v-if="referral.url" class="space-y-3">
+          <div class="flex items-center bg-black/20 rounded-2xl p-2.5 backdrop-blur-sm border border-white/10">
+            <span class="text-xs text-white/80 font-mono truncate flex-1 px-2 select-all">{{ referral.url }}</span>
+            <button @click="copyReferralLink" class="px-3 py-1.5 bg-white text-teal-800 rounded-xl text-xs font-bold hover:bg-teal-50 transition-colors shadow-sm">
+              {{ copySuccess ? '✓ Скопировано' : 'Копировать' }}
+            </button>
+          </div>
+
+          <div class="flex gap-2">
+            <button @click="shareTelegram" class="flex-1 py-2 bg-white/15 hover:bg-white/25 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors border border-white/10">
+              <span>✈️ Telegram</span>
+            </button>
+            <button @click="shareWhatsApp" class="flex-1 py-2 bg-white/15 hover:bg-white/25 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors border border-white/10">
+              <span>💬 WhatsApp</span>
+            </button>
+            <button @click="shareNative" class="px-3 py-2 bg-white/15 hover:bg-white/25 rounded-xl text-xs font-semibold flex items-center justify-center transition-colors border border-white/10" title="Поделиться">
+              <span>🔗</span>
+            </button>
+          </div>
+        </div>
+        <div v-else class="text-xs text-white/70 py-2">
+          Загрузка персональной ссылки...
+        </div>
+      </div>
+
+      <!-- Notifications & Marketing Consent -->
+      <div class="bg-white rounded-[32px] p-5 shadow-sm border border-gray-100">
+        <div class="flex items-center justify-between">
+          <div class="pr-4">
+            <h4 class="font-bold text-slate-800 text-sm">Маркетинговые предложения</h4>
+            <p class="text-xs text-gray-500 mt-0.5">Получать новости, акции и специальные предложения POPUTKI.ONLINE</p>
+            <p class="text-[11px] text-gray-400 mt-1">Только по вашему прямому согласию. Никакого спама.</p>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+            <input 
+              type="checkbox" 
+              v-model="marketingConsent" 
+              @change="toggleMarketingConsent" 
+              :disabled="consentLoading"
+              class="sr-only peer"
+            >
+            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+          </label>
+        </div>
       </div>
 
       <button @click="logout" class="w-full bg-white text-red-500 font-bold py-4 rounded-3xl shadow-sm border border-red-50 hover:bg-red-50 transition-colors flex items-center justify-center space-x-2">

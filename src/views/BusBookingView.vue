@@ -3,6 +3,7 @@ import api from '../api';
 import BusSeatSelector from '../components/BusSeatSelector.vue';
 import AppModal from '../components/AppModal.vue';
 import { compressImage } from '../utils/imageCompression';
+import acquisitionService from '../services/acquisitionService';
 
 const STATE_KEY = (id) => `bus_booking_${id}`;
 
@@ -244,6 +245,7 @@ export default {
                     console.error('Error reading attribution:', e);
                 }
 
+                const attrCtx = acquisitionService.getAttributionContext();
                 const payload = {
                     bus_ticket_id: Number(this.ticketId),
                     passenger_id: this.user.id,
@@ -254,7 +256,9 @@ export default {
                     drop_off_city: this.dropOffCity,
                     channel: attribution?.channel || 'web',
                     source_type: attribution?.source_type || 'direct',
-                    source_id: attribution?.source_id || null
+                    source_id: attribution?.source_id || null,
+                    anonymous_visitor_id: attrCtx.anonymous_visitor_id,
+                    session_id: attrCtx.session_id
                 };
 
                 const res = await api.post('/payments/create-invoice', payload);
@@ -415,6 +419,7 @@ export default {
             this.$router.replace('/auth');
             return;
         }
+        acquisitionService.trackBookingStarted(Number(this.ticketId));
         await this.fetchTicket();
         this.loadState();
     },

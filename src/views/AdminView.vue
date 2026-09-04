@@ -97,6 +97,7 @@ export default {
             passengersData: [],
             navItems: [
                 { id: 'dashboard', label: 'Дашборд' },
+                { id: 'passenger-funnel', label: 'Воронка пассажиров' },
                 { id: 'users', label: 'Пользователи' },
                 { id: 'bus-drivers', label: 'Водители автобусов' },
                 { id: 'rides', label: 'Попутки' },
@@ -106,6 +107,38 @@ export default {
                 { id: 'cities', label: 'Города' },
                 { id: 'polls', label: 'Опросы' }
             ],
+            // Phase P.1F: Passenger Activation Funnel State
+            funnelLoading: false,
+            funnelSummary: null,
+            funnelStages: [],
+            funnelPassengers: [],
+            funnelPagination: { page: 1, limit: 20, total: 0, totalPages: 1 },
+            funnelAttention: [],
+            funnelChannels: [],
+            funnelCarriers: [],
+            funnelFilters: {
+                period: '30days',
+                startDate: '',
+                endDate: '',
+                carrier_id: '',
+                bus_ticket_id: '',
+                channel: '',
+                status: 'ALL',
+                attentionOnly: false,
+                search: ''
+            },
+            funnelActiveSubTab: 'table', // 'table' | 'channels' | 'carriers'
+            selectedTimelineBooking: null,
+            timelineData: null,
+            timelineHandoffs: [],
+            timelineLoading: false,
+            showTimelineModal: false,
+            selectedClaimReview: null,
+            reviewDecision: 'approved',
+            reviewReason: '',
+            reviewSubmitting: false,
+            showReviewModal: false,
+            reviewSuccessMessage: '',
             pollSettings: { question: '', option1: '', option2: '', option3: '' },
             pollAnswers: [],
             pollSettingsLoading: false,
@@ -698,12 +731,297 @@ export default {
         closeBusDriverDetail() {
             this.selectedBusDriver = null;
             this.selectedBusDriverTickets = [];
+        },
+
+        // ─── Passenger Activation Funnel Methods (Phase P.1F) ────────
+        async fetchFunnelData() {
+            this.funnelLoading = true;
+            try {
+                await Promise.all([
+                    this.fetchFunnelSummary(),
+                    this.fetchFunnelStages(),
+                    this.fetchFunnelPassengers(1),
+                    this.fetchFunnelAttention(),
+                    this.fetchFunnelChannels(),
+                    this.fetchFunnelCarriers()
+                ]);
+            } catch (err) {
+                console.error('[Funnel] Error loading funnel data:', err);
+            } finally {
+                this.funnelLoading = false;
+            }
+        },
+        buildFunnelQueryParams(extra = {}) {
+            const f = this.funnelFilters;
+            const params = new URLSearchParams();
+            if (f.period) params.append('period', f.period);
+            if (f.startDate) params.append('startDate', f.startDate);
+            if (f.endDate) params.append('endDate', f.endDate);
+            if (f.carrier_id) params.append('carrier_id', f.carrier_id);
+            if (f.bus_ticket_id) params.append('bus_ticket_id', f.bus_ticket_id);
+            if (f.channel) params.append('channel', f.channel);
+            if (f.status && f.status !== 'ALL') params.append('status', f.status);
+            if (f.attentionOnly) params.append('attentionOnly', 'true');
+            if (f.search) params.append('search', f.search);
+
+            Object.entries(extra).forEach(([k, v]) => {
+                if (v !== undefined && v !== null) params.append(k, v);
+            });
+            return params.toString();
+        },
+        async fetchFunnelSummary() {
+            try {
+                const qs = this.buildFunnelQueryParams();
+                const res = await api.get(`/admin/passenger-funnel/summary?${qs}`);
+                if (res.data?.success) {
+                    this.funnelSummary = res.data.summary;
+                }
+            } catch (err) {
+                console.error('Failed to fetch funnel summary:', err);
+            }
+        },
+        async fetchFunnelStages() {
+            try {
+                const qs = this.buildFunnelQueryParams();
+                const res = await api.get(`/admin/passenger-funnel/stages?${qs}`);
+                if (res.data?.success) {
+                    this.funnelStages = res.data.stages || [];
+                }
+            } catch (err) {
+                console.error('Failed to fetch funnel stages:', err);
+            }
+        },
+        async fetchFunnelPassengers(page = 1) {
+            try {
+                const qs = this.buildFunnelQueryParams({ page, limit: this.funnelPagination.limit });
+                const res = await api.get(`/admin/passenger-funnel/passengers?${qs}`);
+                if (res.data?.success) {
+                    this.funnelPassengers = res.data.passengers || [];
+                    this.funnelPagination = res.data.pagination || { page: 1, limit: 20, total: 0, totalPages: 1 };
+                }
+            } catch (err) {
+                console.error('Failed to fetch funnel passengers:', err);
+            }
+        },
+        async fetchFunnelAttention() {
+            try {
+                const res = await api.get('/admin/passenger-funnel/attention');
+                if (res.data?.success) {
+                    this.funnelAttention = res.data.items || [];
+                }
+            } catch (err) {
+                console.error('Failed to fetch funnel attention queue:', err);
+            }
+        },
+        async fetchFunnelChannels() {
+            try {
+                const qs = this.buildFunnelQueryParams();
+                const res = await api.get(`/admin/passenger-funnel/channels?${qs}`);
+                if (res.data?.success) {
+                    this.funnelChannels = res.data.channels || [];
+                }
+            } catch (err) {
+                console.error('Failed to fetch funnel channels:', err);
+            }
+        },
+        async fetchFunnelCarriers() {
+            try {
+                const qs = this.buildFunnelQueryParams();
+                const res = await api.get(`/admin/passenger-funnel/carriers?${qs}`);
+                if (res.data?.success) {
+                    this.funnelCarriers = res.data.carriers || [];
+                }
+            } catch (err) {
+                console.error('Failed to fetch funnel carriers:', err);
+            }
+        },
+        applyFunnelFilter() {
+            this.fetchFunnelData();
+        },
+        setFunnelPeriod(p) {
+            this.funnelFilters.period = p;
+            this.applyFunnelFilter();
+        },
+        setFunnelQuickFilter(key) {
+            if (key === 'attention') {
+                this.funnelFilters.attentionOnly = !this.funnelFilters.attentionOnly;
+                this.funnelFilters.status = 'ALL';
+            } else if (key === 'mismatch') {
+                this.funnelFilters.status = this.funnelFilters.status === 'PHONE_MISMATCH' ? 'ALL' : 'PHONE_MISMATCH';
+                this.funnelFilters.attentionOnly = false;
+            } else if (key === 'bot_abandoned') {
+                this.funnelFilters.status = this.funnelFilters.status === 'BOT_STARTED' ? 'ALL' : 'BOT_STARTED';
+                this.funnelFilters.attentionOnly = false;
+            } else if (key === 'opened_no_bot') {
+                this.funnelFilters.status = this.funnelFilters.status === 'LINK_OPENED' ? 'ALL' : 'LINK_OPENED';
+                this.funnelFilters.attentionOnly = false;
+            } else if (key === 'activated') {
+                this.funnelFilters.status = this.funnelFilters.status === 'ACTIVATED' ? 'ALL' : 'ACTIVATED';
+                this.funnelFilters.attentionOnly = false;
+            }
+            this.applyFunnelFilter();
+        },
+        resetFunnelFilters() {
+            this.funnelFilters = {
+                period: '30days',
+                startDate: '',
+                endDate: '',
+                carrier_id: '',
+                bus_ticket_id: '',
+                channel: '',
+                status: 'ALL',
+                attentionOnly: false,
+                search: ''
+            };
+            this.applyFunnelFilter();
+        },
+        async openPassengerTimeline(bookingId) {
+            this.selectedTimelineBooking = bookingId;
+            this.timelineData = null;
+            this.timelineHandoffs = [];
+            this.timelineLoading = true;
+            this.showTimelineModal = true;
+            try {
+                const res = await api.get(`/admin/passenger-funnel/bookings/${bookingId}/timeline`);
+                if (res.data?.success) {
+                    this.timelineData = res.data;
+                    this.timelineHandoffs = res.data.handoffs || [];
+                }
+            } catch (err) {
+                alert('Ошибка загрузки таймлайна: ' + (err.response?.data?.message || err.message));
+            } finally {
+                this.timelineLoading = false;
+            }
+        },
+        closePassengerTimeline() {
+            this.showTimelineModal = false;
+            this.selectedTimelineBooking = null;
+            this.timelineData = null;
+        },
+        openReviewModal(item) {
+            this.selectedClaimReview = item;
+            this.reviewDecision = 'approved';
+            this.reviewReason = '';
+            this.reviewSuccessMessage = '';
+            this.showReviewModal = true;
+        },
+        closeReviewModal() {
+            this.showReviewModal = false;
+            this.selectedClaimReview = null;
+        },
+        async submitClaimReview() {
+            if (!this.selectedClaimReview?.claimRequestId) return;
+            this.reviewSubmitting = true;
+            this.reviewSuccessMessage = '';
+            try {
+                const reqId = this.selectedClaimReview.claimRequestId;
+                const res = await api.post(`/admin/passenger-funnel/claim-requests/${reqId}/review`, {
+                    decision: this.reviewDecision,
+                    reason: this.reviewReason || null
+                });
+                if (res.data?.success) {
+                    this.reviewSuccessMessage = this.reviewDecision === 'approved' 
+                        ? 'Бронь успешно подтверждена и привязана к пассажиру!' 
+                        : 'Заявка отклонена.';
+                    setTimeout(() => {
+                        this.closeReviewModal();
+                        this.fetchFunnelData();
+                    }, 1200);
+                }
+            } catch (err) {
+                alert('Ошибка проверки заявки: ' + (err.response?.data?.message || err.message));
+            } finally {
+                this.reviewSubmitting = false;
+            }
+        },
+        getFunnelStatusBadgeClass(status) {
+            const map = {
+                'ACTIVATED': 'bg-emerald-100 text-emerald-800 border-emerald-200',
+                'LINK_OPENED': 'bg-sky-100 text-sky-800 border-sky-200',
+                'TELEGRAM_CTA_CLICKED': 'bg-indigo-100 text-indigo-800 border-indigo-200',
+                'BOT_STARTED': 'bg-purple-100 text-purple-800 border-purple-200',
+                'PHONE_PENDING': 'bg-violet-100 text-violet-800 border-violet-200',
+                'SHARE_INITIATED': 'bg-blue-100 text-blue-800 border-blue-200',
+                'NOT_SHARED': 'bg-slate-100 text-slate-700 border-slate-200',
+                'PHONE_MISMATCH': 'bg-rose-100 text-rose-800 border-rose-200',
+                'UNDER_REVIEW': 'bg-amber-100 text-amber-800 border-amber-200',
+                'BOT_ABANDONED': 'bg-orange-100 text-orange-800 border-orange-200',
+                'EXPIRED': 'bg-stone-100 text-stone-700 border-stone-200',
+                'LEGACY': 'bg-gray-100 text-gray-500 border-gray-200'
+            };
+            return map[status] || 'bg-slate-100 text-slate-700 border-slate-200';
+        },
+        getFunnelStatusLabel(status) {
+            const map = {
+                'ACTIVATED': 'Активирован ✓',
+                'LINK_OPENED': 'Ссылка открыта',
+                'TELEGRAM_CTA_CLICKED': 'Telegram CTA',
+                'BOT_STARTED': 'Бот запущен',
+                'PHONE_PENDING': 'Ожидает номер',
+                'SHARE_INITIATED': 'Передача инициирована',
+                'NOT_SHARED': 'Не передан',
+                'PHONE_MISMATCH': 'Номер не совпал ⚠️',
+                'UNDER_REVIEW': 'На проверке ⚠️',
+                'BOT_ABANDONED': 'Бот оставлен (>2ч)',
+                'EXPIRED': 'Истек срок ссылки',
+                'LEGACY': 'Legacy (до P.1)'
+            };
+            return map[status] || status;
+        },
+        getEventTitle(type) {
+            const map = {
+                'BOOKING_CREATED': 'Ручная бронь создана',
+                'SHARE_INITIATED': 'Передача билета инициирована',
+                'LINK_OPENED': 'Ссылка на билет открыта',
+                'TELEGRAM_CTA_CLICKED': 'Нажата кнопка Telegram CTA',
+                'TELEGRAM_BOT_STARTED': 'Бот @Poputkionline_bot запущен',
+                'PHONE_SHARE_REQUESTED': 'Запрос номера телефона в боте',
+                'PHONE_SHARED': 'Номер телефона передан кнопкой',
+                'PHONE_VERIFIED': 'Номер подтверждён',
+                'PHONE_MISMATCH': 'Номер не совпал с бронью',
+                'CLAIM_REQUEST_CREATED': 'Создан запрос подтверждения',
+                'CLAIM_COMPLETED': 'Бронь подтверждена',
+                'BOOKING_LINKED_TO_USER': 'Бронь привязана к аккаунту',
+                'ACTIVATION_COMPLETED': 'Активация пассажира завершена'
+            };
+            return map[type] || type;
+        },
+        getEventIcon(type) {
+            const map = {
+                'BOOKING_CREATED': '🎫',
+                'SHARE_INITIATED': '📤',
+                'LINK_OPENED': '👀',
+                'TELEGRAM_CTA_CLICKED': '✈️',
+                'TELEGRAM_BOT_STARTED': '🤖',
+                'PHONE_SHARE_REQUESTED': '📱',
+                'PHONE_SHARED': '📲',
+                'PHONE_VERIFIED': '✅',
+                'PHONE_MISMATCH': '⚠️',
+                'CLAIM_REQUEST_CREATED': '📝',
+                'CLAIM_COMPLETED': '🎉',
+                'BOOKING_LINKED_TO_USER': '🔗',
+                'ACTIVATION_COMPLETED': '🌟'
+            };
+            return map[type] || '📌';
+        },
+        formatTimelineDate(dateStr) {
+            if (!dateStr) return '—';
+            try {
+                const d = new Date(dateStr);
+                return d.toLocaleString('ru-RU', {
+                    day: '2-digit', month: '2-digit', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit', second: '2-digit'
+                });
+            } catch (e) {
+                return dateStr;
+            }
         }
     },
     watch: {
         activeTab(newTab) {
             this.isCreatingBus = false;
             if (newTab === 'dashboard') this.fetchDashboardData();
+            if (newTab === 'passenger-funnel') this.fetchFunnelData();
             if (newTab === 'users') this.fetchUsers();
             if (newTab === 'bus-drivers') this.fetchBusDrivers();
             if (newTab === 'rides') this.fetchRides();
@@ -718,8 +1036,15 @@ export default {
         }
     },
     mounted() {
-        if (this.isAuthenticated && this.activeTab === 'dashboard') {
-            this.fetchDashboardData();
+        if (this.$route.name === 'admin-passenger-funnel' || this.$route.path === '/admin/passenger-funnel' || this.$route.query.tab === 'passenger-funnel') {
+            this.activeTab = 'passenger-funnel';
+        }
+        if (this.isAuthenticated) {
+            if (this.activeTab === 'passenger-funnel') {
+                this.fetchFunnelData();
+            } else if (this.activeTab === 'dashboard') {
+                this.fetchDashboardData();
+            }
         }
     }
 }
@@ -986,6 +1311,528 @@ export default {
                                 <span class="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full text-[10px] font-bold">{{ r.count }} рейсов</span>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Passenger Funnel Section (Phase P.1F: Admin-Only Activation Funnel) -->
+            <section v-if="activeTab === 'passenger-funnel'" class="space-y-6 lg:space-y-8">
+                <!-- Header -->
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl lg:rounded-[32px] border border-slate-100 shadow-sm">
+                    <div>
+                        <div class="flex items-center gap-3 mb-1">
+                            <h2 class="text-2xl lg:text-3xl font-black text-slate-900 tracking-tight">Воронка пассажиров</h2>
+                            <span class="px-2.5 py-0.5 bg-amber-100 text-amber-800 text-xs font-black rounded-full border border-amber-200">ADMIN-ONLY</span>
+                            <span class="px-2.5 py-0.5 bg-slate-100 text-slate-600 text-xs font-semibold rounded-full border border-slate-200">Учёт с 04.09.2026</span>
+                        </div>
+                        <p class="text-sm text-slate-500">Сквозной контроль пути пассажира: ручная бронь → передача → открытие билета → бот → номер → активация</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button 
+                            @click="fetchFunnelData" 
+                            :disabled="funnelLoading"
+                            class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all flex items-center gap-2 text-sm shadow-sm"
+                        >
+                            <svg :class="{'animate-spin': funnelLoading}" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            <span>{{ funnelLoading ? 'Обновление...' : 'Обновить данные' }}</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filters Toolbar -->
+                <div class="bg-white p-6 rounded-2xl lg:rounded-[32px] border border-slate-100 shadow-sm space-y-4">
+                    <!-- Period Buttons -->
+                    <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="text-xs font-bold uppercase tracking-wider text-slate-400 mr-2">Период:</span>
+                            <button 
+                                v-for="p in [
+                                    { id: 'today', label: 'Сегодня' },
+                                    { id: 'yesterday', label: 'Вчера' },
+                                    { id: '7days', label: '7 дней' },
+                                    { id: '30days', label: '30 дней' },
+                                    { id: 'all', label: 'Все (с P.1)' }
+                                ]" 
+                                :key="p.id"
+                                @click="setPeriod(p.id)"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
+                                :class="funnelFilters.period === p.id ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'"
+                            >
+                                {{ p.label }}
+                            </button>
+                        </div>
+                        <button 
+                            @click="resetFilters" 
+                            class="text-xs font-bold text-slate-400 hover:text-slate-600 underline"
+                        >
+                            Сбросить фильтры
+                        </button>
+                    </div>
+
+                    <!-- Dropdown Filters & Search -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">Канал передачи</label>
+                            <select 
+                                v-model="funnelFilters.channel" 
+                                @change="fetchFunnelData"
+                                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-amber-500"
+                            >
+                                <option value="">Все каналы передачи</option>
+                                <option value="whatsapp">WhatsApp</option>
+                                <option value="sms">SMS</option>
+                                <option value="telegram">Telegram Share</option>
+                                <option value="copy_link">Копирование ссылки</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">Статус воронки</label>
+                            <select 
+                                v-model="funnelFilters.status" 
+                                @change="fetchFunnelData"
+                                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-amber-500"
+                            >
+                                <option value="ALL">Все статусы</option>
+                                <option value="NOT_SHARED">NOT_SHARED (не передан)</option>
+                                <option value="SHARE_INITIATED">SHARE_INITIATED (передача начата)</option>
+                                <option value="LINK_OPENED">LINK_OPENED (ссылка открыта)</option>
+                                <option value="TELEGRAM_CTA_CLICKED">TELEGRAM_CTA_CLICKED</option>
+                                <option value="BOT_STARTED">BOT_STARTED (бот запущен)</option>
+                                <option value="PHONE_PENDING">PHONE_PENDING (ожидает номер)</option>
+                                <option value="BOT_ABANDONED">BOT_ABANDONED (>2ч без номера)</option>
+                                <option value="PHONE_MISMATCH">PHONE_MISMATCH (не совпал)</option>
+                                <option value="UNDER_REVIEW">UNDER_REVIEW (на проверке)</option>
+                                <option value="ACTIVATED">ACTIVATED (пассажир активирован)</option>
+                                <option value="EXPIRED">EXPIRED (сессия истекла)</option>
+                                <option value="LEGACY">LEGACY (до Phase P.1)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">Перевозчик</label>
+                            <select 
+                                v-model="funnelFilters.carrier_id" 
+                                @change="fetchFunnelData"
+                                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-amber-500"
+                            >
+                                <option value="">Все перевозчики</option>
+                                <option v-for="d in busDrivers" :key="d.id" :value="d.id">{{ d.name }} {{ d.surname }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">Поиск</label>
+                            <input 
+                                v-model="funnelFilters.search" 
+                                @keyup.enter="fetchFunnelData"
+                                type="text" 
+                                placeholder="Имя, маска тел., рейс..." 
+                                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-amber-500"
+                            />
+                        </div>
+                    </div>
+
+                    <!-- Quick Filter Pills -->
+                    <div class="flex flex-wrap items-center gap-2 pt-2">
+                        <button 
+                            @click="toggleAttentionFilter"
+                            class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5"
+                            :class="funnelFilters.attentionOnly ? 'bg-rose-500 text-white border-rose-500 shadow-sm' : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'"
+                        >
+                            <span>⚠️</span>
+                            <span>Только требующие внимания ({{ funnelAttention.length }})</span>
+                        </button>
+                        <button 
+                            @click="setQuickStatus('PHONE_MISMATCH')"
+                            class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all"
+                            :class="funnelFilters.status === 'PHONE_MISMATCH' ? 'bg-amber-500 text-white border-amber-500' : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'"
+                        >
+                            Несовпадение номера
+                        </button>
+                        <button 
+                            @click="setQuickStatus('BOT_ABANDONED')"
+                            class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all"
+                            :class="funnelFilters.status === 'BOT_ABANDONED' ? 'bg-orange-500 text-white border-orange-500' : 'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100'"
+                        >
+                            Запустили бот, но не передали номер
+                        </button>
+                        <button 
+                            @click="setQuickStatus('LINK_OPENED')"
+                            class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all"
+                            :class="funnelFilters.status === 'LINK_OPENED' ? 'bg-sky-500 text-white border-sky-500' : 'bg-sky-50 text-sky-800 border-sky-200 hover:bg-sky-100'"
+                        >
+                            Открыли билет, но не запустили бот
+                        </button>
+                        <button 
+                            @click="setQuickStatus('ACTIVATED')"
+                            class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all"
+                            :class="funnelFilters.status === 'ACTIVATED' ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'"
+                        >
+                            Только активированные
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 10 Upper KPI Cards -->
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 lg:gap-4">
+                    <div class="bg-white p-4 lg:p-5 rounded-2xl border border-slate-100 shadow-sm border-l-4 border-l-blue-500">
+                        <p class="text-slate-400 text-[10px] font-black uppercase tracking-wider mb-1">1. Ручные брони</p>
+                        <h4 class="text-2xl lg:text-3xl font-black text-slate-900 font-mono">{{ funnelSummary?.manualBookingsCount || 0 }}</h4>
+                        <div class="mt-2 text-[11px] text-slate-400 font-medium">100% от общего числа</div>
+                    </div>
+                    <div class="bg-white p-4 lg:p-5 rounded-2xl border border-slate-100 shadow-sm border-l-4 border-l-indigo-500">
+                        <p class="text-slate-400 text-[10px] font-black uppercase tracking-wider mb-1">2. Передача иниц.</p>
+                        <h4 class="text-2xl lg:text-3xl font-black text-indigo-600 font-mono">{{ funnelSummary?.shareInitiatedCount || 0 }}</h4>
+                        <div class="mt-2 text-[11px] text-slate-500 font-bold">
+                            {{ funnelSummary?.shareInitiatedConversion !== null ? funnelSummary.shareInitiatedConversion + '%' : '—' }} от броней
+                        </div>
+                    </div>
+                    <div class="bg-white p-4 lg:p-5 rounded-2xl border border-slate-100 shadow-sm border-l-4 border-l-sky-500">
+                        <p class="text-slate-400 text-[10px] font-black uppercase tracking-wider mb-1">3. Ссылка открыта</p>
+                        <h4 class="text-2xl lg:text-3xl font-black text-sky-600 font-mono">{{ funnelSummary?.linkOpenedCount || 0 }}</h4>
+                        <div class="mt-2 text-[11px] text-slate-500 font-bold">
+                            {{ funnelSummary?.linkOpenedConversion !== null ? funnelSummary.linkOpenedConversion + '%' : '—' }} от передач
+                        </div>
+                    </div>
+                    <div class="bg-white p-4 lg:p-5 rounded-2xl border border-slate-100 shadow-sm border-l-4 border-l-cyan-500">
+                        <p class="text-slate-400 text-[10px] font-black uppercase tracking-wider mb-1">4. Telegram CTA</p>
+                        <h4 class="text-2xl lg:text-3xl font-black text-cyan-600 font-mono">{{ funnelSummary?.telegramCtaClickedCount || 0 }}</h4>
+                        <div class="mt-2 text-[11px] text-slate-500 font-bold">
+                            {{ funnelSummary?.telegramCtaConversion !== null ? funnelSummary.telegramCtaConversion + '%' : '—' }} от открытий
+                        </div>
+                    </div>
+                    <div class="bg-white p-4 lg:p-5 rounded-2xl border border-slate-100 shadow-sm border-l-4 border-l-purple-500">
+                        <p class="text-slate-400 text-[10px] font-black uppercase tracking-wider mb-1">5. Бот запущен</p>
+                        <h4 class="text-2xl lg:text-3xl font-black text-purple-600 font-mono">{{ funnelSummary?.botStartedCount || 0 }}</h4>
+                        <div class="mt-2 text-[11px] text-slate-500 font-bold">
+                            {{ funnelSummary?.botStartedConversion !== null ? funnelSummary.botStartedConversion + '%' : '—' }} от CTA
+                        </div>
+                    </div>
+                    <div class="bg-white p-4 lg:p-5 rounded-2xl border border-slate-100 shadow-sm border-l-4 border-l-violet-500">
+                        <p class="text-slate-400 text-[10px] font-black uppercase tracking-wider mb-1">6. Номер передан</p>
+                        <h4 class="text-2xl lg:text-3xl font-black text-violet-600 font-mono">{{ funnelSummary?.phoneSharedCount || 0 }}</h4>
+                        <div class="mt-2 text-[11px] text-slate-500 font-bold">
+                            {{ funnelSummary?.phoneSharedConversion !== null ? funnelSummary.phoneSharedConversion + '%' : '—' }} от ботов
+                        </div>
+                    </div>
+                    <div class="bg-white p-4 lg:p-5 rounded-2xl border border-slate-100 shadow-sm border-l-4 border-l-teal-500">
+                        <p class="text-slate-400 text-[10px] font-black uppercase tracking-wider mb-1">7. Номер подтверждён</p>
+                        <h4 class="text-2xl lg:text-3xl font-black text-teal-600 font-mono">{{ funnelSummary?.phoneVerifiedCount || 0 }}</h4>
+                        <div class="mt-2 text-[11px] text-slate-500 font-bold">
+                            {{ funnelSummary?.phoneVerifiedConversion !== null ? funnelSummary.phoneVerifiedConversion + '%' : '—' }} от переданных
+                        </div>
+                    </div>
+                    <div class="bg-white p-4 lg:p-5 rounded-2xl border border-slate-100 shadow-sm border-l-4 border-l-emerald-500">
+                        <p class="text-slate-400 text-[10px] font-black uppercase tracking-wider mb-1">8. Пассажир активирован</p>
+                        <h4 class="text-2xl lg:text-3xl font-black text-emerald-600 font-mono">{{ funnelSummary?.activatedCount || 0 }}</h4>
+                        <div class="mt-2 text-[11px] text-emerald-600 font-bold">
+                            {{ funnelSummary?.activatedConversion !== null ? funnelSummary.activatedConversion + '%' : '—' }} от подтверждённых
+                        </div>
+                    </div>
+                    <div class="bg-white p-4 lg:p-5 rounded-2xl border border-slate-100 shadow-sm border-l-4 border-l-amber-500">
+                        <p class="text-slate-400 text-[10px] font-black uppercase tracking-wider mb-1">9. Общая конверсия</p>
+                        <h4 class="text-2xl lg:text-3xl font-black text-amber-500 font-mono">
+                            {{ funnelSummary?.conversionRate !== null && funnelSummary?.conversionRate !== undefined ? funnelSummary.conversionRate + '%' : '0%' }}
+                        </h4>
+                        <div class="mt-2 text-[11px] text-slate-400 font-medium">бронь → активация</div>
+                    </div>
+                    <div class="bg-white p-4 lg:p-5 rounded-2xl border border-slate-100 shadow-sm border-l-4 border-l-rose-500">
+                        <p class="text-slate-400 text-[10px] font-black uppercase tracking-wider mb-1">10. Время активации</p>
+                        <div class="text-lg font-black text-slate-800 font-mono">
+                            <span>Ср: {{ funnelSummary?.avgActivationTimeMinutes !== null && funnelSummary?.avgActivationTimeMinutes !== undefined ? funnelSummary.avgActivationTimeMinutes + 'м' : '—' }}</span>
+                            <span class="text-xs text-slate-400 font-normal ml-1">/ Мед: {{ funnelSummary?.medianActivationTimeMinutes !== null && funnelSummary?.medianActivationTimeMinutes !== undefined ? funnelSummary.medianActivationTimeMinutes + 'м' : '—' }}</span>
+                        </div>
+                        <div class="mt-2 text-[11px] text-slate-400 font-medium">от создания брони</div>
+                    </div>
+                </div>
+
+                <!-- Visual Funnel Stages -->
+                <div class="bg-white p-6 rounded-2xl lg:rounded-[32px] border border-slate-100 shadow-sm space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-lg font-bold text-slate-900">Визуальная воронка активации (Phase P.1)</h3>
+                        <span class="text-xs text-slate-400">Уникальные booking_id · Атрибуция по handoff_id</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-9 gap-3">
+                        <div 
+                            v-for="(st, idx) in funnelStages" 
+                            :key="st.id" 
+                            class="relative bg-slate-50 hover:bg-amber-50/50 p-4 rounded-2xl border border-slate-200 transition-all flex flex-col justify-between"
+                        >
+                            <div>
+                                <div class="flex items-center justify-between text-[11px] font-bold text-slate-400 mb-1">
+                                    <span>#{{ idx + 1 }}</span>
+                                    <span v-if="st.conversionFromPrev !== null" class="text-emerald-600 font-mono">{{ st.conversionFromPrev }}%</span>
+                                </div>
+                                <h5 class="text-xs font-black text-slate-800 leading-tight mb-2">{{ st.name }}</h5>
+                                <div class="text-2xl font-black text-slate-900 font-mono">{{ st.count }}</div>
+                            </div>
+                            <div class="mt-3 pt-2 border-t border-slate-200/60 text-[10px]">
+                                <div v-if="st.dropOff !== null" class="text-rose-500 font-medium flex justify-between">
+                                    <span>Потери:</span>
+                                    <span class="font-bold font-mono">-{{ st.dropOff }} ({{ st.dropOffPercent }}%)</span>
+                                </div>
+                                <div v-else class="text-slate-400">
+                                    Базовый этап
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Attention Work Queue («Требуют внимания») -->
+                <div v-if="funnelAttention && funnelAttention.length > 0" class="bg-rose-50/70 border border-rose-200 p-6 rounded-2xl lg:rounded-[32px] shadow-sm space-y-4">
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center gap-2">
+                            <span class="text-rose-600 text-lg">⚠️</span>
+                            <h3 class="text-base font-black text-rose-900">Рабочая очередь: требуют внимания ({{ funnelAttention.length }})</h3>
+                        </div>
+                        <span class="text-xs text-rose-700 font-medium">Приоритетные действия для администратора платформы</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <div 
+                            v-for="item in funnelAttention" 
+                            :key="item.booking_id"
+                            class="bg-white p-4 rounded-2xl border border-rose-100 shadow-sm flex flex-col justify-between space-y-3"
+                        >
+                            <div>
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="text-xs font-bold text-slate-800">{{ item.passenger_name }}</span>
+                                    <span class="px-2 py-0.5 rounded-md text-[10px] font-black uppercase border" :class="getFunnelStatusBadgeClass(item.status)">
+                                        {{ getFunnelStatusLabel(item.status) }}
+                                    </span>
+                                </div>
+                                <div class="text-xs font-mono text-slate-500">{{ item.masked_phone || 'Номер не указан' }}</div>
+                                <div class="text-xs text-slate-500 mt-1">
+                                    <span class="font-bold">{{ item.carrier_name || 'Перевозчик' }}</span> · <span>{{ item.route || 'Маршрут не указан' }}</span>
+                                </div>
+                                <div class="text-[11px] text-rose-600 font-semibold mt-2 bg-rose-50 p-2 rounded-xl">
+                                    {{ item.issue_description }}
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between pt-2 border-t border-slate-100 gap-2">
+                                <button 
+                                    @click="openPassengerTimeline(item.booking_id)"
+                                    class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors flex-1 text-center"
+                                >
+                                    История пути
+                                </button>
+                                <button 
+                                    v-if="item.claim_request_id"
+                                    @click="openReviewModal(item)"
+                                    class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs transition-colors flex-1 text-center shadow-sm shadow-amber-500/20"
+                                >
+                                    Решить несовпадение
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Drill-down Sub-tabs: Table | Channels | Carriers -->
+                <div class="bg-white rounded-2xl lg:rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
+                    <!-- Sub-tabs Header -->
+                    <div class="px-6 pt-6 pb-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div class="flex items-center gap-2">
+                            <button 
+                                @click="funnelActiveSubTab = 'table'"
+                                class="px-4 py-2 rounded-xl text-xs font-bold transition-all"
+                                :class="funnelActiveSubTab === 'table' ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'"
+                            >
+                                Путь пассажиров ({{ funnelPagination.total }})
+                            </button>
+                            <button 
+                                @click="funnelActiveSubTab = 'channels'"
+                                class="px-4 py-2 rounded-xl text-xs font-bold transition-all"
+                                :class="funnelActiveSubTab === 'channels' ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'"
+                            >
+                                Аналитика каналов ({{ funnelChannels.length }})
+                            </button>
+                            <button 
+                                @click="funnelActiveSubTab = 'carriers'"
+                                class="px-4 py-2 rounded-xl text-xs font-bold transition-all"
+                                :class="funnelActiveSubTab === 'carriers' ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'"
+                            >
+                                Рейтинг перевозчиков ({{ funnelCarriers.length }})
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Sub-tab 1: Passenger Table -->
+                    <div v-if="funnelActiveSubTab === 'table'" class="p-6">
+                        <div v-if="funnelLoading" class="flex items-center justify-center py-20">
+                            <span class="w-8 h-8 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin"></span>
+                        </div>
+                        <div v-else-if="funnelPassengers.length === 0" class="text-center py-20 text-slate-400">
+                            <p class="text-lg font-medium">Пассажиры не найдены по выбранным фильтрам</p>
+                            <button @click="resetFilters" class="mt-3 text-xs font-bold text-amber-600 underline">Сбросить фильтры</button>
+                        </div>
+                        <div v-else class="overflow-x-auto">
+                            <table class="w-full text-left min-w-[1200px]">
+                                <thead class="bg-slate-50 border-b border-slate-100 text-[10px] uppercase text-slate-400 font-black tracking-widest">
+                                    <tr>
+                                        <th class="px-4 py-3">Пассажир</th>
+                                        <th class="px-4 py-3">Телефон</th>
+                                        <th class="px-4 py-3">Перевозчик</th>
+                                        <th class="px-4 py-3">Рейс / Маршрут</th>
+                                        <th class="px-4 py-3">Дата отправления</th>
+                                        <th class="px-4 py-3">Место</th>
+                                        <th class="px-4 py-3">Дата брони</th>
+                                        <th class="px-4 py-3">Канал передачи</th>
+                                        <th class="px-4 py-3">Статус воронки</th>
+                                        <th class="px-4 py-3">Время на этапе</th>
+                                        <th class="px-4 py-3">Рекомендуемое действие</th>
+                                        <th class="px-4 py-3 text-right">История</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-50">
+                                    <tr 
+                                        v-for="p in funnelPassengers" 
+                                        :key="p.booking_id"
+                                        class="hover:bg-slate-50/70 transition-colors text-slate-700 text-xs"
+                                    >
+                                        <td class="px-4 py-3 font-bold text-slate-900 whitespace-nowrap">{{ p.passenger_name }}</td>
+                                        <td class="px-4 py-3 font-mono text-slate-600 whitespace-nowrap">{{ p.masked_phone }}</td>
+                                        <td class="px-4 py-3 text-slate-600 whitespace-nowrap">{{ p.carrier_name || '—' }}</td>
+                                        <td class="px-4 py-3">
+                                            <div class="font-bold text-slate-800 whitespace-nowrap">{{ p.route || '—' }}</div>
+                                            <div class="text-[10px] text-slate-400 font-mono">ID: {{ p.booking_id ? p.booking_id.slice(0, 8) : '—' }}</div>
+                                        </td>
+                                        <td class="px-4 py-3 text-slate-600 whitespace-nowrap font-mono">{{ p.departure_date || '—' }}</td>
+                                        <td class="px-4 py-3">
+                                            <span class="px-2 py-0.5 bg-amber-50 text-amber-700 font-bold rounded-md border border-amber-100 text-[10px]">{{ p.seat_number || '—' }}</span>
+                                        </td>
+                                        <td class="px-4 py-3 text-slate-500 whitespace-nowrap font-mono">{{ p.created_at ? new Date(p.created_at).toLocaleDateString('ru-RU') : '—' }}</td>
+                                        <td class="px-4 py-3 whitespace-nowrap">
+                                            <span v-if="p.last_channel" class="px-2 py-0.5 bg-slate-100 text-slate-700 font-semibold rounded text-[10px] border border-slate-200">
+                                                {{ p.last_channel }}
+                                            </span>
+                                            <span v-else class="text-slate-300">—</span>
+                                        </td>
+                                        <td class="px-4 py-3 whitespace-nowrap">
+                                            <span class="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border" :class="getFunnelStatusBadgeClass(p.status)">
+                                                {{ getFunnelStatusLabel(p.status) }}
+                                            </span>
+                                        </td>
+                                        <td class="px-4 py-3 text-slate-500 whitespace-nowrap font-mono text-[11px]">{{ p.time_in_stage || '—' }}</td>
+                                        <td class="px-4 py-3 text-slate-600 max-w-[220px] text-[11px] leading-tight">
+                                            {{ p.next_recommended_action || '—' }}
+                                        </td>
+                                        <td class="px-4 py-3 text-right whitespace-nowrap">
+                                            <button 
+                                                @click="openPassengerTimeline(p.booking_id)"
+                                                class="px-2.5 py-1.5 bg-slate-100 hover:bg-amber-500 hover:text-white text-slate-600 font-bold rounded-lg text-xs transition-colors"
+                                            >
+                                                История
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <!-- Pagination -->
+                            <div class="mt-6 flex items-center justify-between pt-4 border-t border-slate-100 text-xs">
+                                <div class="text-slate-400">
+                                    Показано {{ funnelPassengers.length }} из {{ funnelPagination.total }} пассажиров
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <button 
+                                        :disabled="funnelPagination.page <= 1"
+                                        @click="changeFunnelPage(funnelPagination.page - 1)"
+                                        class="px-3 py-1.5 rounded-lg border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                                    >
+                                        Назад
+                                    </button>
+                                    <span class="px-3 py-1.5 font-bold text-slate-700">Стр. {{ funnelPagination.page }} из {{ funnelPagination.totalPages }}</span>
+                                    <button 
+                                        :disabled="funnelPagination.page >= funnelPagination.totalPages"
+                                        @click="changeFunnelPage(funnelPagination.page + 1)"
+                                        class="px-3 py-1.5 rounded-lg border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                                    >
+                                        Вперёд
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sub-tab 2: Channels Table -->
+                    <div v-if="funnelActiveSubTab === 'channels'" class="p-6 overflow-x-auto">
+                        <div class="mb-4 text-xs text-slate-400">
+                            * Система фиксирует факт инициирования передачи билета в канал перевозчиком (слово «доставлено» не используется).
+                        </div>
+                        <table class="w-full text-left min-w-[900px]">
+                            <thead class="bg-slate-50 border-b border-slate-100 text-[10px] uppercase text-slate-400 font-black tracking-widest">
+                                <tr>
+                                    <th class="px-4 py-3">Канал передачи</th>
+                                    <th class="px-4 py-3">Попытки передачи</th>
+                                    <th class="px-4 py-3">Уникальные брони</th>
+                                    <th class="px-4 py-3">Открытия ссылки</th>
+                                    <th class="px-4 py-3">Telegram CTA</th>
+                                    <th class="px-4 py-3">Запуски бота</th>
+                                    <th class="px-4 py-3">Передача номера</th>
+                                    <th class="px-4 py-3">Активации</th>
+                                    <th class="px-4 py-3">Конверсия передачи → активация</th>
+                                    <th class="px-4 py-3">Медианное время</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-50">
+                                <tr v-for="ch in funnelChannels" :key="ch.channel" class="hover:bg-slate-50 transition-colors text-xs text-slate-700">
+                                    <td class="px-4 py-3 font-bold text-slate-900">{{ ch.channel_name || ch.channel }}</td>
+                                    <td class="px-4 py-3 font-mono">{{ ch.total_handoffs }}</td>
+                                    <td class="px-4 py-3 font-mono font-bold">{{ ch.unique_bookings }}</td>
+                                    <td class="px-4 py-3 font-mono">{{ ch.link_opened_count }}</td>
+                                    <td class="px-4 py-3 font-mono">{{ ch.telegram_cta_count }}</td>
+                                    <td class="px-4 py-3 font-mono">{{ ch.bot_started_count }}</td>
+                                    <td class="px-4 py-3 font-mono">{{ ch.phone_shared_count }}</td>
+                                    <td class="px-4 py-3 font-mono font-bold text-emerald-600">{{ ch.activated_count }}</td>
+                                    <td class="px-4 py-3">
+                                        <span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-mono font-bold rounded border border-emerald-100 text-[11px]">
+                                            {{ ch.conversion_rate !== null ? ch.conversion_rate + '%' : '0%' }}
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-3 font-mono text-slate-500">{{ ch.median_activation_time ? ch.median_activation_time + ' мин' : '—' }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Sub-tab 3: Carriers Table -->
+                    <div v-if="funnelActiveSubTab === 'carriers'" class="p-6 overflow-x-auto">
+                        <div class="mb-4 text-xs text-slate-400">
+                            * Административный рейтинг эффективности передачи билетов и активации пассажиров по перевозчикам.
+                        </div>
+                        <table class="w-full text-left min-w-[900px]">
+                            <thead class="bg-slate-50 border-b border-slate-100 text-[10px] uppercase text-slate-400 font-black tracking-widest">
+                                <tr>
+                                    <th class="px-4 py-3">Перевозчик</th>
+                                    <th class="px-4 py-3">Ручные брони</th>
+                                    <th class="px-4 py-3">Билетов передано</th>
+                                    <th class="px-4 py-3">Ссылок открыто</th>
+                                    <th class="px-4 py-3">Пассажиров активировано</th>
+                                    <th class="px-4 py-3">Процент активации</th>
+                                    <th class="px-4 py-3">Ср. время до передачи</th>
+                                    <th class="px-4 py-3">Ср. время до активации</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-50">
+                                <tr v-for="c in funnelCarriers" :key="c.carrier_id" class="hover:bg-slate-50 transition-colors text-xs text-slate-700">
+                                    <td class="px-4 py-3 font-bold text-slate-900">{{ c.carrier_name }}</td>
+                                    <td class="px-4 py-3 font-mono">{{ c.manual_bookings_count }}</td>
+                                    <td class="px-4 py-3 font-mono">{{ c.handoffs_count }}</td>
+                                    <td class="px-4 py-3 font-mono">{{ c.links_opened_count }}</td>
+                                    <td class="px-4 py-3 font-mono font-bold text-emerald-600">{{ c.activated_count }}</td>
+                                    <td class="px-4 py-3">
+                                        <span class="px-2 py-0.5 bg-amber-50 text-amber-700 font-mono font-bold rounded border border-amber-100 text-[11px]">
+                                            {{ c.activation_rate !== null ? c.activation_rate + '%' : '0%' }}
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-3 font-mono text-slate-500">{{ c.avg_time_to_handoff ? c.avg_time_to_handoff + ' мин' : '—' }}</td>
+                                    <td class="px-4 py-3 font-mono text-slate-500">{{ c.avg_time_to_activation ? c.avg_time_to_activation + ' мин' : '—' }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </section>
@@ -1839,6 +2686,169 @@ export default {
                             </tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Passenger Journey Timeline Modal (Phase P.1F) -->
+        <div v-if="showTimelineModal" class="fixed inset-0 z-[220] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6" @click.self="closePassengerTimeline">
+            <div class="max-w-2xl w-full bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                <!-- Header -->
+                <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h3 class="text-lg font-black text-slate-900">Путь пассажира</h3>
+                            <span v-if="timelineData?.booking?.status" class="px-2 py-0.5 rounded text-[10px] font-black uppercase border" :class="getFunnelStatusBadgeClass(timelineData.booking.status)">
+                                {{ getFunnelStatusLabel(timelineData.booking.status) }}
+                            </span>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-0.5">
+                            {{ timelineData?.booking?.passenger_name }} · {{ timelineData?.booking?.masked_phone }} · Бронь #{{ selectedTimelineBooking ? selectedTimelineBooking.slice(0, 8) : '—' }}
+                        </p>
+                    </div>
+                    <button @click="closePassengerTimeline" class="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+
+                <!-- Timeline Body -->
+                <div class="p-6 overflow-y-auto flex-1 space-y-6">
+                    <div v-if="timelineLoading" class="flex items-center justify-center py-16">
+                        <span class="w-8 h-8 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin"></span>
+                    </div>
+                    <div v-else-if="!timelineData || !timelineData.events || timelineData.events.length === 0" class="text-center py-12 text-slate-400">
+                        События для этой брони не зафиксированы
+                    </div>
+                    <div v-else class="relative pl-6 border-l-2 border-slate-200 space-y-6 ml-3">
+                        <div 
+                            v-for="ev in timelineData.events" 
+                            :key="ev.id"
+                            class="relative group"
+                        >
+                            <!-- Dot / Icon -->
+                            <div class="absolute -left-[35px] top-0 w-8 h-8 rounded-full bg-white border-2 border-slate-200 group-hover:border-amber-500 flex items-center justify-center text-sm shadow-sm transition-colors">
+                                {{ getEventIcon(ev.event_type) }}
+                            </div>
+                            <!-- Content -->
+                            <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100 group-hover:border-amber-200 transition-colors">
+                                <div class="flex items-center justify-between mb-1">
+                                    <h5 class="text-xs font-bold text-slate-900">{{ getEventTitle(ev.event_type) }}</h5>
+                                    <span class="text-[10px] font-mono text-slate-400">{{ formatTimelineDate(ev.created_at) }}</span>
+                                </div>
+                                <div class="text-[11px] text-slate-500 space-y-1">
+                                    <div v-if="ev.channel" class="flex items-center gap-1.5">
+                                        <span class="font-semibold text-slate-600">Канал:</span>
+                                        <span class="px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded text-[9px] font-mono">{{ ev.channel }}</span>
+                                    </div>
+                                    <div v-if="ev.actor_role" class="flex items-center gap-1.5">
+                                        <span class="font-semibold text-slate-600">Действующее лицо:</span>
+                                        <span class="text-slate-600">{{ ev.actor_role }}</span>
+                                    </div>
+                                    <div v-if="ev.metadata && Object.keys(ev.metadata).length > 0" class="mt-1 text-[10px] text-slate-400 font-mono bg-white p-2 rounded-lg border border-slate-100">
+                                        <div v-for="(v, k) in ev.metadata" :key="k">
+                                            <span class="text-slate-500">{{ k }}:</span> {{ v }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+                    <button @click="closePassengerTimeline" class="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs transition-colors">
+                        Закрыть
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phone Mismatch Claim Review Modal (Phase P.1F) -->
+        <div v-if="showReviewModal" class="fixed inset-0 z-[230] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6" @click.self="closeReviewModal">
+            <div class="max-w-md w-full bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col">
+                <div class="px-6 py-5 border-b border-slate-100 bg-rose-50/50 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span class="text-rose-500 text-lg">⚠️</span>
+                        <h3 class="text-base font-black text-rose-900">Проверка несовпадения номера</h3>
+                    </div>
+                    <button @click="closeReviewModal" class="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-white transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+
+                <div class="p-6 space-y-4">
+                    <div v-if="reviewSuccessMessage" class="p-4 bg-emerald-50 text-emerald-800 rounded-2xl border border-emerald-200 text-xs font-bold text-center">
+                        {{ reviewSuccessMessage }}
+                    </div>
+
+                    <div v-else class="space-y-4">
+                        <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-2 text-xs">
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Пассажир:</span>
+                                <span class="font-bold text-slate-800">{{ selectedClaimReview?.passenger_name }}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Телефон в брони:</span>
+                                <span class="font-mono font-bold text-slate-800">{{ selectedClaimReview?.masked_phone || '—' }}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Рейс:</span>
+                                <span class="text-slate-700">{{ selectedClaimReview?.route }}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Перевозчик:</span>
+                                <span class="text-slate-700">{{ selectedClaimReview?.carrier_name }}</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-2">Решение администратора платформы:</label>
+                            <div class="grid grid-cols-2 gap-3">
+                                <label 
+                                    class="p-3 rounded-2xl border cursor-pointer flex items-center gap-2 text-xs font-bold transition-all"
+                                    :class="reviewDecision === 'approved' ? 'bg-emerald-50 border-emerald-500 text-emerald-800' : 'border-slate-200 text-slate-600'"
+                                >
+                                    <input type="radio" v-model="reviewDecision" value="approved" class="text-emerald-500" />
+                                    <span>Одобрить (привязать)</span>
+                                </label>
+                                <label 
+                                    class="p-3 rounded-2xl border cursor-pointer flex items-center gap-2 text-xs font-bold transition-all"
+                                    :class="reviewDecision === 'rejected' ? 'bg-rose-50 border-rose-500 text-rose-800' : 'border-slate-200 text-slate-600'"
+                                >
+                                    <input type="radio" v-model="reviewDecision" value="rejected" class="text-rose-500" />
+                                    <span>Отклонить</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Причина / Комментарий:</label>
+                            <textarea 
+                                v-model="reviewReason" 
+                                rows="3" 
+                                placeholder="Например: подтверждено администратором по обращению пассажира" 
+                                class="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs text-slate-800 outline-none focus:border-amber-500"
+                            ></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="!reviewSuccessMessage" class="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-2">
+                    <button 
+                        @click="closeReviewModal" 
+                        class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+                    >
+                        Отмена
+                    </button>
+                    <button 
+                        @click="submitClaimReview" 
+                        :disabled="reviewSubmitting"
+                        class="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-amber-500/20 disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                        <span v-if="reviewSubmitting" class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                        <span>Применить решение</span>
+                    </button>
                 </div>
             </div>
         </div>

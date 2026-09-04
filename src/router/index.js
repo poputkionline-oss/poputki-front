@@ -108,6 +108,12 @@ const router = createRouter({
             meta: { hideBottomNav: true }
         },
         {
+            path: '/admin/passenger-funnel',
+            name: 'admin-passenger-funnel',
+            component: () => import('../views/AdminView.vue'),
+            meta: { hideBottomNav: true }
+        },
+        {
             path: '/payment-result',
             name: 'payment-result',
             component: () => import('../views/PaymentResultView.vue'),
@@ -212,7 +218,7 @@ router.beforeEach(async (to, from, next) => {
     const isAuthenticated = !!localStorage.getItem('token');
     user = JSON.parse(localStorage.getItem('user')); // Re-fetch after possible sync
     const isComplete = isProfileComplete(user);
-    const publicRoutes = ['auth', 'admin', 'bus-admin', 'ride-details', 'landing', 'search', 'payment-result', 'ticket-verification', 'ticket-verify-alias', 'ticket-preview', 'terms'];
+    const publicRoutes = ['auth', 'admin', 'admin-passenger-funnel', 'bus-admin', 'ride-details', 'landing', 'search', 'payment-result', 'ticket-verification', 'ticket-verify-alias', 'ticket-preview', 'terms'];
 
     if (!publicRoutes.includes(to.name)) {
         if (!isAuthenticated || !isComplete) {

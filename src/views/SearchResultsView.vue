@@ -1,6 +1,7 @@
 <script>
 import api from '../api';
 import { getTelegramUser, getTelegramInitData } from '../telegram';
+import acquisitionService from '../services/acquisitionService';
 
 export default {
   data() {
@@ -36,6 +37,13 @@ export default {
     async search() {
       this.isLoading = true;
       this.showAltOffer = false;
+      if (this.fromCity && this.toCity) {
+        acquisitionService.trackRouteSearched({
+          from_city_id: this.fromCity,
+          to_city_id: this.toCity,
+          travel_date: this.date
+        });
+      }
       try {
         const params = {};
         if (this.fromCity) params.from = this.fromCity;

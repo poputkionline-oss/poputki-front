@@ -206,3 +206,21 @@ export function buildSmsHandoffUrl({ phone, message }) {
     const encodedMessage = encodeURIComponent(message || '');
     return `sms:+${normalizedPhone}?body=${encodedMessage}`;
 }
+
+/**
+ * Builds a Telegram share URL for carrier handoff.
+ * Strictly uses Telegram Share URL to prevent launching bot directly as carrier:
+ * https://t.me/share/url?url=<encodedTicketUrl>&text=<encodedMessage>
+ * 
+ * @param {Object} params
+ * @param {string} params.ticketUrl - Canonical Ticket URL with handoffId
+ * @param {string} [params.message] - Accompanying message text
+ * @returns {string|null} Full Telegram share URL or null if ticketUrl missing
+ */
+export function buildTelegramShareUrl({ ticketUrl, message }) {
+    if (!ticketUrl) return null;
+    const encodedUrl = encodeURIComponent(ticketUrl);
+    const encodedText = encodeURIComponent(message || '');
+    return `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`;
+}
+

@@ -1,8 +1,8 @@
 <script>
 import api from '../api';
 import { getTelegramUser, getTelegramInitData } from '../telegram';
-
 import AppLogo from '../components/AppLogo.vue';
+import acquisitionService from '../services/acquisitionService';
 
 export default {
     name: 'LandingView',
@@ -39,6 +39,13 @@ export default {
       }
     },
     goToSearch() {
+      if (this.fromCity && this.toCity) {
+        acquisitionService.trackRouteSearched({
+          from_city_id: this.fromCity,
+          to_city_id: this.toCity,
+          travel_date: this.date
+        });
+      }
       this.$router.push({
         path: '/search',
         query: {
@@ -48,6 +55,9 @@ export default {
           tab: this.activeTab === 'buses' ? 'bus' : 'rides'
         }
       });
+    },
+    async openTelegramBot() {
+      await acquisitionService.openTelegramBot();
     },
     async syncTelegram() {
       const tgUser = getTelegramUser();
@@ -79,6 +89,7 @@ export default {
     }
   },
   mounted() {
+    acquisitionService.initSession();
     this.fetchCities();
     this.fetchRecentRides();
     this.syncTelegram();
@@ -383,10 +394,10 @@ export default {
                     <h3 class="text-xl font-bold text-slate-900 mb-2">Telegram интеграция</h3>
                     <p class="text-slate-500 leading-relaxed mb-6">Получайте все уведомления о бронированиях напрямую в Telegram. Быстро, удобно и всегда под рукой.</p>
                     
-                    <a href="https://t.me/poputkionline_bot" target="_blank" class="mt-auto group inline-flex items-center gap-2 text-blue-600 font-bold bg-blue-50 px-5 py-3 rounded-2xl hover:bg-blue-100 transition-colors">
+                    <button @click="openTelegramBot" class="mt-auto group inline-flex items-center gap-2 text-blue-600 font-bold bg-blue-50 px-5 py-3 rounded-2xl hover:bg-blue-100 transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 fill-current" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.96-.64-.34-.99.23-1.58.15-.15 2.76-2.52 2.81-2.74.01-.03.01-.13-.06-.18-.08-.05-.18-.03-.25-.01-.11.02-1.87 1.18-5.28 3.48-.5.35-.95.52-1.36.51-.45-.01-1.31-.25-1.95-.46-.78-.25-1.4-.38-1.35-.8.03-.22.34-.45.92-.69 3.63-1.58 6.05-2.63 7.27-3.13 3.46-1.43 4.18-1.68 4.65-1.69.11 0 .34.02.48.13.12.09.15.22.16.32-.01.07-.01.16-.02.26z"/></svg>
                         Перейти в Telegram-бот
-                    </a>
+                    </button>
                 </div>
             </div>
 
