@@ -144,9 +144,14 @@ class AcquisitionService {
             return this.initPromise;
         }
 
-        this.initPromise = (async () => {
+        const run = async () => {
             const visitorId = this.getOrCreateVisitorId();
             const urlAttr = this.extractUrlAttribution();
+
+            // Scrub attribution parameters from URL bar as early as possible
+            if (urlAttr.hasAttributionParams) {
+                this.scrubUrlParameters();
+            }
 
             // 1. Check existing session in sessionStorage
             try {
@@ -201,7 +206,7 @@ class AcquisitionService {
                         sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(this.sessionData));
                     } catch (e) { }
 
-                    // Clean URL tracking query parameters
+                    // Clean URL tracking query parameters again to ensure completeness
                     this.scrubUrlParameters();
 
                     // Emit LANDING_VIEWED once per session
@@ -215,9 +220,14 @@ class AcquisitionService {
             }
 
             return null;
-        })();
+        };
 
-        return this.initPromise;
+        this.initPromise = run();
+        try {
+            return await this.initPromise;
+        } finally {
+            this.initPromise = null;
+        }
     }
 
     /**

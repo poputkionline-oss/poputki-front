@@ -183,6 +183,8 @@ export default {
     }
   },
   mounted() {
+    acquisitionService.initSession();
+
     // Check for success notification from redirect
     if (this.$route.query.success === 'true') {
       this.successMessage = this.$route.query.message || 'Операция выполнена!';

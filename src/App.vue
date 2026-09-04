@@ -1,10 +1,14 @@
 <script>
 import { RouterView } from 'vue-router'
 import BottomNav from './components/BottomNav.vue'
+import acquisitionService from './services/acquisitionService'
 
 export default {
   components: {
     BottomNav
+  },
+  mounted() {
+    acquisitionService.initSession();
   }
 }
 </script>
