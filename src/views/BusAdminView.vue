@@ -192,8 +192,9 @@ export default {
                 ticket: null,
                 newBus: null,
                 affectedBookings: [],
-                mappings: {} // bookingId -> newSeatNumber
+                mappings: {} // `${bookingId}_${seatIndex}` -> newSeatNumber
             },
+            editSessionIdempotencyKey: null,
             tripChangeSuccessSummary: null,
             handoffModal: {
                 show: false,
@@ -505,6 +506,11 @@ export default {
             this.editingTicketId = ticket.id;
             this.editingOriginalBusId = ticket.bus_id || null;
             this.selectedFleetBusId = ticket.bus_id ? String(ticket.bus_id) : '';
+            // Generate stable edit session idempotency key once per editing intent
+            const uuid = (typeof crypto !== 'undefined' && crypto.randomUUID) 
+                ? crypto.randomUUID() 
+                : `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+            this.editSessionIdempotencyKey = `edit-${ticket.id}-${uuid}`;
             this.busForm = {
                 ...ticket,
                 duration_hours: ticket.duration_minutes ? (ticket.duration_minutes / 60).toFixed(1) : '',
@@ -611,6 +617,7 @@ export default {
             this.isEditingTicket = false;
             this.editingTicketId = null;
             this.editingOriginalBusId = null;
+            this.editSessionIdempotencyKey = null;
             this.activeTab = 'tickets';
         },
         canEditTrip(ticket) {
@@ -737,14 +744,21 @@ export default {
 
             this.loading = true;
             try {
-                // Idempotency key per edit save attempt
-                updateData.idempotency_key = `trip-edit-${this.editingTicketId}-${Date.now()}`;
+                // Ensure idempotency key is preserved across retries, conflicts, and seat remap
+                if (!this.editSessionIdempotencyKey) {
+                    const uuid = (typeof crypto !== 'undefined' && crypto.randomUUID) 
+                        ? crypto.randomUUID() 
+                        : `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+                    this.editSessionIdempotencyKey = `edit-${this.editingTicketId}-${uuid}`;
+                }
+                updateData.idempotency_key = this.editSessionIdempotencyKey;
 
                 const res = await api.put(`/bus-admin/tickets/${this.editingTicketId}`, updateData);
                 const data = res.data || {};
 
                 this.isEditingTicket = false;
                 this.editingTicketId = null;
+                this.editSessionIdempotencyKey = null;
                 this.showScheduleConflictModal = false;
                 this.showTripChangeConfirmModal = false;
                 this.showSeatRemapModal = false;
@@ -767,10 +781,15 @@ export default {
                     // Open Seat Remapping Modal
                     const respData = e.response.data || {};
                     const affected = respData.affectedBookings || [];
+                    const totalSeats = Number(respData.newBus?.total_seats) || 53;
                     const initialMappings = {};
                     affected.forEach(b => {
-                        const s = Array.isArray(b.seat_numbers) ? b.seat_numbers[0] : b.seat_numbers;
-                        initialMappings[b.id] = s || '';
+                        const rawSeats = typeof b.seat_numbers === 'string' ? JSON.parse(b.seat_numbers || '[]') : (b.seat_numbers || []);
+                        const seats = Array.isArray(rawSeats) ? rawSeats : [rawSeats];
+                        seats.forEach((seat, idx) => {
+                            const num = Number(seat);
+                            initialMappings[`${b.id}_${idx}`] = (num > 0 && num <= totalSeats) ? num : '';
+                        });
                     });
                     this.seatRemapData = {
                         ticket: editingTicket,
@@ -805,20 +824,33 @@ export default {
             const chosenSeats = new Set();
             const totalSeats = Number(remap.newBus?.total_seats) || 53;
 
-            for (const b of remap.affectedBookings) {
-                const newSeat = Number(remap.mappings[b.id]);
-                if (!newSeat || isNaN(newSeat) || newSeat <= 0 || newSeat > totalSeats) {
-                    alert(`Пожалуйста, выберите корректное новое место для брони #${b.id} (от 1 до ${totalSeats}).`);
-                    return;
+            for (const b of (remap.affectedBookings || [])) {
+                const rawSeats = typeof b.seat_numbers === 'string' ? JSON.parse(b.seat_numbers || '[]') : (b.seat_numbers || []);
+                const seats = Array.isArray(rawSeats) ? rawSeats : [rawSeats];
+                const seatMappings = [];
+                const newSeatNumbers = [];
+
+                for (let idx = 0; idx < seats.length; idx++) {
+                    const oldSeat = Number(seats[idx]);
+                    const newSeat = Number(remap.mappings[`${b.id}_${idx}`]);
+
+                    if (!newSeat || isNaN(newSeat) || newSeat <= 0 || newSeat > totalSeats) {
+                        alert(`Пожалуйста, выберите корректное новое место для брони #${b.id} (старое место ${oldSeat}, допустимый диапазон от 1 до ${totalSeats}).`);
+                        return;
+                    }
+                    if (chosenSeats.has(newSeat)) {
+                        alert(`Место ${newSeat} выбрано более одного раза. Каждому пассажиру необходимо назначить уникальное место.`);
+                        return;
+                    }
+                    chosenSeats.add(newSeat);
+                    seatMappings.push({ old_seat: oldSeat, new_seat: newSeat });
+                    newSeatNumbers.push(newSeat);
                 }
-                if (chosenSeats.has(newSeat)) {
-                    alert(`Место ${newSeat} выбрано более одного раза. Каждому пассажиру необходимо назначить уникальное место.`);
-                    return;
-                }
-                chosenSeats.add(newSeat);
+
                 payload.push({
                     booking_id: b.id,
-                    new_seat_numbers: [newSeat]
+                    seat_mappings: seatMappings,
+                    new_seat_numbers: newSeatNumbers
                 });
             }
 
@@ -3155,21 +3187,28 @@ watch: {
                 <div class="space-y-3">
                     <div class="text-xs font-bold text-slate-700">Сопоставление мест:</div>
                     <div class="max-h-60 overflow-y-auto space-y-2 pr-1">
-                        <div v-for="b in seatRemapData?.affectedBookings || []" :key="b.id" class="p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between gap-3 text-xs">
-                            <div>
+                        <div v-for="b in seatRemapData?.affectedBookings || []" :key="b.id" class="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
+                            <div class="flex items-center justify-between pb-1 border-b border-slate-200/60">
                                 <div class="font-bold text-slate-800">Бронь #{{ b.id }}</div>
-                                <div class="text-slate-500 text-[11px]">Старое место: <span class="font-black text-amber-600">{{ Array.isArray(b.seat_numbers) ? b.seat_numbers.join(', ') : b.seat_numbers }}</span></div>
+                                <div class="text-slate-500 text-[11px]">
+                                    Мест: <span class="font-bold text-slate-700">{{ (Array.isArray(b.seat_numbers) ? b.seat_numbers : [b.seat_numbers]).length }}</span>
+                                </div>
                             </div>
-                            <div class="flex items-center gap-2">
-                                <label class="text-slate-500 text-xs">Новое место:</label>
-                                <input
-                                    v-model.number="seatRemapData.mappings[b.id]"
-                                    type="number"
-                                    min="1"
-                                    :max="seatRemapData?.newBus?.total_seats || 70"
-                                    class="w-20 px-3 py-2 bg-white border border-slate-200 rounded-xl text-center font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs"
-                                    placeholder="№"
-                                />
+                            <div class="space-y-2 pt-1">
+                                <div v-for="(seat, idx) in (Array.isArray(b.seat_numbers) ? b.seat_numbers : [b.seat_numbers])" :key="idx" class="flex items-center justify-between gap-3 bg-white p-2 rounded-lg border border-slate-100">
+                                    <div class="text-slate-600">Старое место: <span class="font-black text-amber-600">№ {{ seat }}</span></div>
+                                    <div class="flex items-center gap-2">
+                                        <label class="text-slate-500 text-[11px]">Новое место:</label>
+                                        <input
+                                            v-model.number="seatRemapData.mappings[`${b.id}_${idx}`]"
+                                            type="number"
+                                            min="1"
+                                            :max="seatRemapData?.newBus?.total_seats || 70"
+                                            class="w-20 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-center font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                                            placeholder="№"
+                                        />
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
