@@ -177,6 +177,24 @@ export default {
             selectedShareTicket: null,
             shareToast: false,
             shareToastMessage: '',
+            // Phase: Trip Editing & Passenger Notification Modals
+            showTripChangeConfirmModal: false,
+            tripChangeConfirmData: {
+                ticket: null,
+                activeBookingsCount: 0,
+                recipientsCount: 0,
+                changedFields: [],
+                oldValues: {},
+                newValues: {}
+            },
+            showSeatRemapModal: false,
+            seatRemapData: {
+                ticket: null,
+                newBus: null,
+                affectedBookings: [],
+                mappings: {} // bookingId -> newSeatNumber
+            },
+            tripChangeSuccessSummary: null,
             handoffModal: {
                 show: false,
                 isExisting: false,
@@ -589,64 +607,180 @@ export default {
             this.activeTab = 'create';
             alert('Обратный рейс сформирован: маршрут развернут в обратную сторону. Выберите дату отправления.');
         },
-        async updateBusTicket(allowConflict = false) {
+        cancelEditTicket() {
+            this.isEditingTicket = false;
+            this.editingTicketId = null;
+            this.editingOriginalBusId = null;
+            this.activeTab = 'tickets';
+        },
+        canEditTrip(ticket) {
+            if (!ticket || ticket.status !== 'active') return false;
+            if (this.hasTripDeparted(ticket)) return false;
+            const role = this.user?.memberRole || this.user?.role;
+            if (role !== 'owner' && role !== 'dispatcher') return false;
+            return true;
+        },
+        async updateBusTicket(allowConflict = false, bypassBookingConfirmation = false, seatRemapPayload = null) {
             if (!this.validateBusForm()) return;
+            
+            const editingTicket = (this.tickets || []).find(t => t.id === this.editingTicketId);
+            const f = this.busForm;
+
+            // Prepare update payload
+            const updateData = {
+                transport_company: f.transport_company,
+                from_city: f.from_city,
+                from_address: f.from_address,
+                to_city: f.to_city,
+                to_address: f.to_address,
+                departure_date: f.departure_date,
+                departure_time: f.departure_time,
+                arrival_date: f.arrival_date,
+                arrival_time: f.arrival_time,
+                duration_minutes: Number(f.duration_hours) * 60,
+                price: Number(f.price),
+                bus_type: f.bus_type,
+                passenger_comments: f.passenger_comments,
+                intermediate_stops: f.intermediate_stops || [],
+                premium_price: f.premium_price ? Number(f.premium_price) : null,
+                photos: f.photos || [],
+                group_leader_name: f.group_leader_name || '',
+                group_leader_phone: f.group_leader_phone || '',
+                group_leader_whatsapp: f.group_leader_whatsapp || ''
+            };
+
+            if (this.selectedFleetBus) {
+                updateData.bus_id = this.selectedFleetBus.id;
+                updateData.bus_type = this.selectedFleetBus.bus_type;
+                updateData.total_seats = this.selectedFleetBus.total_seats;
+                updateData.floor1_seats = this.selectedFleetBus.floor1_seats;
+                updateData.floor2_seats = this.selectedFleetBus.floor2_seats;
+                updateData.photos = this.selectedFleetBus.photos;
+            } else if (f.bus_type === 'double') {
+                updateData.floor1_seats = Number(f.floor1_seats);
+                updateData.floor2_seats = Number(f.floor2_seats);
+                updateData.total_seats = updateData.floor1_seats + updateData.floor2_seats;
+            } else {
+                updateData.total_seats = Number(f.total_seats);
+                updateData.floor1_seats = null;
+                updateData.floor2_seats = null;
+                updateData.premium_price = null;
+            }
+
+            if (allowConflict) {
+                updateData.allow_bus_conflict = true;
+            }
+
+            if (seatRemapPayload) {
+                updateData.seat_remap = seatRemapPayload;
+            }
+
+            // Detect active bookings on this ticket
+            const activeBookingsCount = (editingTicket?.reserved_seats || []).length;
+            
+            // Check substantial changes
+            const SUBSTANTIAL_FIELDS = [
+                'departure_date', 'departure_time', 'arrival_date', 'arrival_time',
+                'from_address', 'to_address', 'intermediate_stops', 'bus_id',
+                'group_leader_name', 'group_leader_phone'
+            ];
+
+            const FIELD_LABELS = {
+                departure_date: 'Дата отправления',
+                departure_time: 'Время отправления',
+                arrival_date: 'Дата прибытия',
+                arrival_time: 'Время прибытия',
+                from_address: 'Адрес отправления',
+                to_address: 'Адрес прибытия',
+                intermediate_stops: 'Промежуточные остановки',
+                bus_id: 'Автобус',
+                price: 'Цена билета',
+                premium_price: 'Цена премиум-места',
+                group_leader_name: 'Старший группы',
+                group_leader_phone: 'Телефон старшего'
+            };
+
+            const changedSubstantialFields = [];
+            const oldVals = {};
+            const newVals = {};
+
+            if (editingTicket) {
+                for (const field of SUBSTANTIAL_FIELDS) {
+                    const oldVal = editingTicket[field];
+                    const newVal = updateData[field];
+                    if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+                        changedSubstantialFields.push({
+                            field,
+                            label: FIELD_LABELS[field] || field,
+                            oldVal: oldVal ?? '—',
+                            newVal: newVal ?? '—'
+                        });
+                        oldVals[field] = oldVal;
+                        newVals[field] = newVal;
+                    }
+                }
+            }
+
+            // Section 6: If active bookings exist and substantial changes made -> Show Confirmation Modal before sending PUT
+            if (activeBookingsCount > 0 && changedSubstantialFields.length > 0 && !bypassBookingConfirmation) {
+                this.tripChangeConfirmData = {
+                    ticket: editingTicket,
+                    activeBookingsCount,
+                    recipientsCount: activeBookingsCount,
+                    changedFields: changedSubstantialFields,
+                    oldValues: oldVals,
+                    newValues: newVals
+                };
+                this.showTripChangeConfirmModal = true;
+                return;
+            }
+
             this.loading = true;
             try {
-                const f = this.busForm;
-                const updateData = {
-                    transport_company: f.transport_company,
-                    from_city: f.from_city,
-                    from_address: f.from_address,
-                    to_city: f.to_city,
-                    to_address: f.to_address,
-                    departure_date: f.departure_date,
-                    departure_time: f.departure_time,
-                    arrival_date: f.arrival_date,
-                    arrival_time: f.arrival_time,
-                    duration_minutes: Number(f.duration_hours) * 60,
-                    price: Number(f.price),
-                    bus_type: f.bus_type,
-                    passenger_comments: f.passenger_comments,
-                    intermediate_stops: f.intermediate_stops || [],
-                    premium_price: f.premium_price ? Number(f.premium_price) : null,
-                    photos: f.photos || []
-                };
+                // Idempotency key per edit save attempt
+                updateData.idempotency_key = `trip-edit-${this.editingTicketId}-${Date.now()}`;
 
-                if (this.selectedFleetBus) {
-                    updateData.bus_id = this.selectedFleetBus.id;
-                    updateData.bus_type = this.selectedFleetBus.bus_type;
-                    updateData.total_seats = this.selectedFleetBus.total_seats;
-                    updateData.floor1_seats = this.selectedFleetBus.floor1_seats;
-                    updateData.floor2_seats = this.selectedFleetBus.floor2_seats;
-                    updateData.photos = this.selectedFleetBus.photos;
-                } else if (f.bus_type === 'double') {
-                    updateData.floor1_seats = Number(f.floor1_seats);
-                    updateData.floor2_seats = Number(f.floor2_seats);
-                    updateData.total_seats = updateData.floor1_seats + updateData.floor2_seats;
-                } else {
-                    updateData.total_seats = Number(f.total_seats);
-                    updateData.floor1_seats = null;
-                    updateData.floor2_seats = null;
-                    updateData.premium_price = null;
-                }
+                const res = await api.put(`/bus-admin/tickets/${this.editingTicketId}`, updateData);
+                const data = res.data || {};
 
-                if (allowConflict) {
-                    updateData.allow_bus_conflict = true;
-                }
-
-                await api.put(`/bus-admin/tickets/${this.editingTicketId}`, updateData);
-                alert('Рейс успешно обновлен!');
                 this.isEditingTicket = false;
                 this.editingTicketId = null;
                 this.showScheduleConflictModal = false;
+                this.showTripChangeConfirmModal = false;
+                this.showSeatRemapModal = false;
                 this.scheduleConflicts = [];
                 this.activeTab = 'tickets';
-                this.fetchTickets();
+                
+                // Show statistics summary
+                if (data.notificationsQueued > 0 || data.unreachableCount > 0 || data.seatsRemapped > 0) {
+                    alert(`Рейс успешно обновлен!\n\nУведомления поставлены в очередь: ${data.notificationsQueued}\nТребуется связаться вручную: ${data.unreachableCount}${data.seatsRemapped ? `\nМеста переназначены: ${data.seatsRemapped}` : ''}`);
+                } else {
+                    alert('Рейс успешно обновлен!');
+                }
+
+                await this.fetchTickets();
             } catch (e) {
                 if (e.response?.status === 409 && e.response?.data?.error === 'BUS_SCHEDULE_CONFLICT') {
                     this.scheduleConflicts = e.response.data.conflicts || [];
                     this.showScheduleConflictModal = true;
+                } else if (e.response?.status === 409 && e.response?.data?.error === 'BUS_SEAT_REMAP_REQUIRED') {
+                    // Open Seat Remapping Modal
+                    const respData = e.response.data || {};
+                    const affected = respData.affectedBookings || [];
+                    const initialMappings = {};
+                    affected.forEach(b => {
+                        const s = Array.isArray(b.seat_numbers) ? b.seat_numbers[0] : b.seat_numbers;
+                        initialMappings[b.id] = s || '';
+                    });
+                    this.seatRemapData = {
+                        ticket: editingTicket,
+                        newBus: respData.newBus,
+                        affectedBookings: affected,
+                        mappings: initialMappings
+                    };
+                    this.showSeatRemapModal = true;
+                } else if (e.response?.status === 409 && e.response?.data?.error === 'ROUTE_CHANGE_REQUIRES_SEPARATE_TRIP') {
+                    alert('Изменение основных городов при наличии активных бронирований запрещено. Пожалуйста, создайте новый рейс или отмените старый.');
                 } else if (e.response?.status === 409 && e.response?.data?.error === 'BUS_REPLACEMENT_HAS_BOOKINGS') {
                     const count = e.response.data.activeBookingCount;
                     const countText = count !== undefined ? ` (активных бронирований: ${count})` : '';
@@ -661,6 +795,38 @@ export default {
                 this.loading = false;
             }
         },
+        confirmTripChangeModal() {
+            this.showTripChangeConfirmModal = false;
+            this.updateBusTicket(false, true);
+        },
+        submitSeatRemap() {
+            const remap = this.seatRemapData;
+            const payload = [];
+            const chosenSeats = new Set();
+            const totalSeats = Number(remap.newBus?.total_seats) || 53;
+
+            for (const b of remap.affectedBookings) {
+                const newSeat = Number(remap.mappings[b.id]);
+                if (!newSeat || isNaN(newSeat) || newSeat <= 0 || newSeat > totalSeats) {
+                    alert(`Пожалуйста, выберите корректное новое место для брони #${b.id} (от 1 до ${totalSeats}).`);
+                    return;
+                }
+                if (chosenSeats.has(newSeat)) {
+                    alert(`Место ${newSeat} выбрано более одного раза. Каждому пассажиру необходимо назначить уникальное место.`);
+                    return;
+                }
+                chosenSeats.add(newSeat);
+                payload.push({
+                    booking_id: b.id,
+                    new_seat_numbers: [newSeat]
+                });
+            }
+
+            this.showSeatRemapModal = false;
+            // Execute update with seat_remap payload and bypassed confirmation
+            this.updateBusTicket(false, true, payload);
+        },
+
         // Phase E.47.1 — timezone-aware departure check (Asia/Dushanbe, matching
         // the platform's business timezone; see backend utils/tripCompletionHelper.js).
         hasTripDeparted(ticket) {
@@ -2141,6 +2307,10 @@ watch: {
                                 <div class="flex flex-wrap items-center gap-2">
                                      <span class="hidden sm:inline-block text-[10px] font-bold px-3 py-1 bg-slate-50 rounded-lg text-slate-400 border border-slate-100 uppercase tracking-widest">{{ ticket.transport_company }}</span>
                                      <div class="flex flex-wrap items-center gap-2" v-if="ticket.status !== 'completed'">
+                                         <button v-if="canEditTrip(ticket)" @click="editTicket(ticket)" class="px-3 py-2.5 bg-amber-50 text-amber-700 hover:text-amber-800 hover:bg-amber-100 rounded-xl transition-all border border-amber-200 flex items-center gap-1.5 text-xs font-bold" title="Редактировать рейс">
+                                             <span>✏️</span>
+                                             <span>Изменить</span>
+                                         </button>
                                          <button @click="openShareModal(ticket)" class="px-3 py-2.5 bg-slate-50 text-slate-700 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all border border-slate-100 flex items-center gap-1.5 text-xs font-bold" title="Поделиться рейсом">
                                              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
@@ -2786,15 +2956,23 @@ watch: {
                             </div>
                         </div>
 
-                        <!-- Submit Button -->
-                         <div class="flex justify-end pt-4">
+                        <!-- Submit and Cancel Buttons -->
+                         <div class="flex items-center justify-end gap-3 pt-4">
+                             <button
+                                v-if="isEditingTicket"
+                                @click="cancelEditTicket"
+                                type="button"
+                                class="px-8 py-4 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-base transition-all cursor-pointer"
+                            >
+                                Отмена
+                            </button>
                              <button
                                 @click="isEditingTicket ? updateBusTicket() : submitBusTicket()"
                                 :disabled="loading"
-                                class="px-12 py-4 rounded-2xl bg-amber-500 text-slate-900 font-bold text-lg shadow-xl shadow-amber-500/20 hover:shadow-amber-500/40 hover:-translate-y-1 active:scale-95 transition-all flex items-center gap-3 disabled:opacity-50"
+                                class="px-12 py-4 rounded-2xl bg-amber-500 text-slate-900 font-bold text-lg shadow-xl shadow-amber-500/20 hover:shadow-amber-500/40 hover:-translate-y-1 active:scale-95 transition-all flex items-center gap-3 disabled:opacity-50 cursor-pointer"
                             >
                                 <span v-if="loading" class="w-5 h-5 border-2 border-slate-900/30 border-t-slate-900 rounded-full animate-spin"></span>
-                                {{ loading ? (isEditingTicket ? 'Обновление...' : 'Создание...') : (isEditingTicket ? 'Обновить рейс' : 'Опубликовать рейс') }}
+                                {{ loading ? (isEditingTicket ? 'Обновление...' : 'Создание...') : (isEditingTicket ? 'Сохранить изменения' : 'Опубликовать рейс') }}
                             </button>
                         </div>
                     </div>
@@ -2904,6 +3082,106 @@ watch: {
                     </button>
                     <button v-else @click="updateBusTicket(true)" class="flex-1 py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer">
                         Все равно сохранить
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trip Change Confirmation Modal (Section 6) -->
+        <div v-if="showTripChangeConfirmModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+            <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+                <div class="flex items-center space-x-3">
+                    <div class="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center text-2xl font-bold flex-shrink-0">
+                        ⚠️
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-black text-slate-900">В рейсе есть забронированные пассажиры</h3>
+                        <p class="text-xs text-slate-500">Активных броней: {{ tripChangeConfirmData?.activeBookingsCount || 0 }}</p>
+                    </div>
+                </div>
+
+                <p class="text-xs text-slate-600 leading-relaxed bg-amber-50/80 border border-amber-200/60 rounded-2xl p-3.5">
+                    Вы изменяете данные рейса, на который уже оформлены бронирования. После сохранения все пассажиры получат уведомление об изменениях через Telegram.
+                </p>
+
+                <div class="space-y-2">
+                    <div class="text-xs font-bold text-slate-700">Список изменённых полей:</div>
+                    <div class="max-h-48 overflow-y-auto space-y-2 pr-1">
+                        <div v-for="cf in tripChangeConfirmData?.changedFields || []" :key="cf.field" class="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs">
+                            <div class="font-bold text-slate-800 mb-1">{{ cf.label }}</div>
+                            <div class="flex items-center justify-between text-[11px] text-slate-500 gap-2">
+                                <span class="line-through text-rose-500 truncate max-w-[45%]">{{ cf.oldVal }}</span>
+                                <span class="text-slate-400">→</span>
+                                <span class="font-semibold text-emerald-600 truncate max-w-[45%]">{{ cf.newVal }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="text-xs text-slate-500 bg-slate-50 rounded-xl p-3 flex justify-between items-center">
+                    <span>Пассажиров для уведомления:</span>
+                    <span class="font-black text-slate-900 text-sm">{{ tripChangeConfirmData?.recipientsCount || 0 }}</span>
+                </div>
+
+                <div class="flex gap-2 pt-2">
+                    <button @click="showTripChangeConfirmModal = false" :disabled="loading" class="flex-1 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer disabled:opacity-50">
+                        Вернуться к редактированию
+                    </button>
+                    <button @click="confirmTripChangeModal" :disabled="loading" class="flex-1 py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1">
+                        <span v-if="loading" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                        <span>Сохранить и уведомить пассажиров</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Seat Remap Modal (Section 8.2) -->
+        <div v-if="showSeatRemapModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+            <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+                <div class="flex items-center space-x-3">
+                    <div class="w-12 h-12 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center text-2xl font-bold flex-shrink-0">
+                        💺
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-black text-slate-900">Переназначение мест в новом автобусе</h3>
+                        <p class="text-xs text-slate-500">Автобус: {{ seatRemapData?.newBus?.model || 'Новый автобус' }} ({{ seatRemapData?.newBus?.total_seats }} мест)</p>
+                    </div>
+                </div>
+
+                <p class="text-xs text-slate-600 leading-relaxed bg-blue-50/80 border border-blue-200/60 rounded-2xl p-3.5">
+                    В выбранном автобусе отсутствуют некоторые места, занятые пассажирами, или изменилась конфигурация салона. Назначьте каждому пассажиру новое доступное место.
+                </p>
+
+                <div class="space-y-3">
+                    <div class="text-xs font-bold text-slate-700">Сопоставление мест:</div>
+                    <div class="max-h-60 overflow-y-auto space-y-2 pr-1">
+                        <div v-for="b in seatRemapData?.affectedBookings || []" :key="b.id" class="p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between gap-3 text-xs">
+                            <div>
+                                <div class="font-bold text-slate-800">Бронь #{{ b.id }}</div>
+                                <div class="text-slate-500 text-[11px]">Старое место: <span class="font-black text-amber-600">{{ Array.isArray(b.seat_numbers) ? b.seat_numbers.join(', ') : b.seat_numbers }}</span></div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="text-slate-500 text-xs">Новое место:</label>
+                                <input
+                                    v-model.number="seatRemapData.mappings[b.id]"
+                                    type="number"
+                                    min="1"
+                                    :max="seatRemapData?.newBus?.total_seats || 70"
+                                    class="w-20 px-3 py-2 bg-white border border-slate-200 rounded-xl text-center font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs"
+                                    placeholder="№"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 pt-2">
+                    <button @click="showSeatRemapModal = false" :disabled="loading" class="flex-1 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer disabled:opacity-50">
+                        Отмена
+                    </button>
+                    <button @click="submitSeatRemap" :disabled="loading" class="flex-1 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-600/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1">
+                        <span v-if="loading" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                        <span>Сохранить переназначение</span>
                     </button>
                 </div>
             </div>
