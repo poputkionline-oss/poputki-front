@@ -128,6 +128,8 @@ export default {
             },
             fleetBuses: [],
             fleetLoading: false,
+            fleetLoadState: 'loading',
+            fleetLoadError: '',
             selectedFleetBusId: '',
             showScheduleConflictModal: false,
             scheduleConflicts: [],
@@ -305,11 +307,22 @@ export default {
         },
         async fetchFleetBuses() {
             this.fleetLoading = true;
+            this.fleetLoadState = 'loading';
+            this.fleetLoadError = '';
             try {
                 const res = await api.get('/bus-admin/buses');
-                this.fleetBuses = Array.isArray(res.data) ? res.data : [];
+                const buses = Array.isArray(res.data) ? res.data : [];
+                this.fleetBuses = buses;
+                const activeBuses = buses.filter(b => b && b.status === 'active');
+                if (activeBuses.length === 0) {
+                    this.fleetLoadState = 'loaded_empty';
+                } else {
+                    this.fleetLoadState = 'loaded_success';
+                }
             } catch (e) {
                 console.error('[BusAdminView] Error loading fleet buses:', e);
+                this.fleetLoadState = 'load_error';
+                this.fleetLoadError = e.response?.data?.error || 'Не удалось загрузить автопарк';
             } finally {
                 this.fleetLoading = false;
             }
@@ -628,6 +641,14 @@ export default {
             return true;
         },
         async updateBusTicket(allowConflict = false, bypassBookingConfirmation = false, seatRemapPayload = null) {
+            if (this.fleetLoadState === 'loading') {
+                alert('Пожалуйста, дождитесь загрузки автопарка перед сохранением.');
+                return;
+            }
+            if (this.fleetLoadState === 'load_error') {
+                alert('Не удалось загрузить автопарк. Пожалуйста, нажмите «Повторить» перед сохранением.');
+                return;
+            }
             if (!this.validateBusForm()) return;
             
             const editingTicket = (this.tickets || []).find(t => t.id === this.editingTicketId);
@@ -1942,6 +1963,7 @@ export default {
             });
         },
         activeFleetBuses() {
+            if (this.fleetLoadState !== 'loaded_success') return [];
             return (this.fleetBuses || []).filter(b => b && b.status === 'active');
         },
         selectedFleetBus() {
@@ -2613,8 +2635,32 @@ watch: {
                                 </button>
                             </div>
 
-                            <!-- If No Active Buses in Fleet -->
-                            <div v-if="!fleetLoading && activeFleetBuses.length === 0" class="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                            <!-- 1. State: loading -->
+                            <div v-if="fleetLoadState === 'loading'" class="p-6 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center gap-3 text-slate-500">
+                                <span class="w-5 h-5 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin"></span>
+                                <span class="text-sm font-medium">Загрузка автопарка...</span>
+                            </div>
+
+                            <!-- 2. State: load_error -->
+                            <div v-else-if="fleetLoadState === 'load_error'" class="p-4 rounded-2xl bg-rose-50 border border-rose-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-rose-900">
+                                <div class="flex items-center gap-2.5">
+                                    <span class="text-lg">⚠️</span>
+                                    <div>
+                                        <div class="font-bold text-xs">Не удалось загрузить автопарк</div>
+                                        <div v-if="fleetLoadError" class="text-[11px] text-rose-600 mt-0.5">{{ fleetLoadError }}</div>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    @click="fetchFleetBuses"
+                                    class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs whitespace-nowrap transition-all shadow-sm cursor-pointer"
+                                >
+                                    Повторить
+                                </button>
+                            </div>
+
+                            <!-- 3. State: loaded_empty -->
+                            <div v-else-if="fleetLoadState === 'loaded_empty' && !fleetLoading && activeFleetBuses.length === 0" class="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                                 <div class="flex items-center gap-2.5">
                                     <span class="text-lg">ℹ️</span>
                                     <span>В вашем автопарке пока нет активных автобусов. Вы можете создать рейс вручную или сначала добавить автобус в автопарк.</span>
@@ -2628,8 +2674,8 @@ watch: {
                                 </button>
                             </div>
 
-                            <!-- If Fleet Has Active Buses -->
-                            <div v-else class="space-y-4">
+                            <!-- 4. State: loaded_success -->
+                            <div v-else-if="fleetLoadState === 'loaded_success'" class="space-y-4">
                                 <div class="relative">
                                     <select
                                         v-model="selectedFleetBusId"
@@ -2998,14 +3044,24 @@ watch: {
                             >
                                 Отмена
                             </button>
-                             <button
-                                @click="isEditingTicket ? updateBusTicket() : submitBusTicket()"
-                                :disabled="loading"
-                                class="px-12 py-4 rounded-2xl bg-amber-500 text-slate-900 font-bold text-lg shadow-xl shadow-amber-500/20 hover:shadow-amber-500/40 hover:-translate-y-1 active:scale-95 transition-all flex items-center gap-3 disabled:opacity-50 cursor-pointer"
-                            >
-                                <span v-if="loading" class="w-5 h-5 border-2 border-slate-900/30 border-t-slate-900 rounded-full animate-spin"></span>
-                                {{ loading ? (isEditingTicket ? 'Обновление...' : 'Создание...') : (isEditingTicket ? 'Сохранить изменения' : 'Опубликовать рейс') }}
-                            </button>
+                             <div class="flex flex-col items-end gap-1.5">
+                                 <div v-if="isEditingTicket && fleetLoadState === 'load_error'" class="text-xs font-bold text-rose-600 flex items-center gap-1.5">
+                                     <span>⚠️</span>
+                                     <span>Сохранение заблокировано: не удалось загрузить автопарк.</span>
+                                 </div>
+                                 <div v-else-if="isEditingTicket && fleetLoadState === 'loading'" class="text-xs font-bold text-amber-600 flex items-center gap-1.5">
+                                     <span class="w-3.5 h-3.5 border-2 border-amber-600/30 border-t-amber-600 rounded-full animate-spin"></span>
+                                     <span>Загрузка автопарка...</span>
+                                 </div>
+                                 <button
+                                     @click="isEditingTicket ? updateBusTicket() : submitBusTicket()"
+                                     :disabled="loading || (isEditingTicket && (fleetLoadState === 'loading' || fleetLoadState === 'load_error'))"
+                                     class="px-12 py-4 rounded-2xl bg-amber-500 text-slate-900 font-bold text-lg shadow-xl shadow-amber-500/20 hover:shadow-amber-500/40 hover:-translate-y-1 active:scale-95 transition-all flex items-center gap-3 disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
+                                 >
+                                     <span v-if="loading" class="w-5 h-5 border-2 border-slate-900/30 border-t-slate-900 rounded-full animate-spin"></span>
+                                     {{ loading ? (isEditingTicket ? 'Обновление...' : 'Создание...') : (isEditingTicket ? 'Сохранить изменения' : 'Опубликовать рейс') }}
+                                 </button>
+                             </div>
                         </div>
                     </div>
                 </section>
