@@ -116,6 +116,8 @@ export default {
             funnelSummary: null,
             funnelStages: [],
             funnelPassengers: [],
+            funnelPassengersLoading: false,
+            funnelPassengersError: null,
             funnelPagination: { page: 1, limit: 20, total: 0, totalPages: 1 },
             funnelAttention: [],
             funnelChannels: [],
@@ -816,6 +818,8 @@ export default {
             }
         },
         async fetchFunnelPassengers(page = 1) {
+            this.funnelPassengersLoading = true;
+            this.funnelPassengersError = null;
             try {
                 const qs = this.buildFunnelQueryParams({ page, limit: this.funnelPagination.limit });
                 const res = await api.get(`/admin/passenger-funnel/passengers?${qs}`);
@@ -823,18 +827,24 @@ export default {
                     const raw = Array.isArray(res.data.passengers) ? res.data.passengers : [];
                     this.funnelPassengers = raw.map(p => this.normalizePassenger(p));
                     this.funnelPagination = res.data.pagination || { page: 1, limit: 20, total: this.funnelPassengers.length, totalPages: 1 };
+                    this.funnelPassengersError = null;
                 } else {
                     this.funnelPassengers = [];
+                    this.funnelPassengersError = 'Не удалось загрузить список пассажиров';
                 }
             } catch (err) {
                 console.error('Failed to fetch funnel passengers:', err?.message || err);
                 this.funnelPassengers = [];
+                this.funnelPassengersError = 'Не удалось загрузить список пассажиров';
                 throw err;
+            } finally {
+                this.funnelPassengersLoading = false;
             }
         },
         async fetchFunnelAttention() {
             try {
-                const res = await api.get('/admin/passenger-funnel/attention');
+                const qs = this.buildFunnelQueryParams();
+                const res = await api.get(`/admin/passenger-funnel/attention?${qs}`);
                 if (res.data?.success) {
                     const raw = Array.isArray(res.data.items) ? res.data.items : [];
                     this.funnelAttention = raw.map(item => this.normalizeAttentionItem(item));
@@ -1905,13 +1915,26 @@ export default {
 
                         <!-- Sub-tab 1: Passenger Table -->
                         <div v-if="funnelActiveSubTab === 'table'" class="p-6">
-                            <div v-if="funnelLoading" class="flex items-center justify-center py-20">
+                            <!-- State 1: loading -->
+                            <div v-if="funnelLoading || funnelPassengersLoading" class="flex items-center justify-center py-20">
                                 <span class="w-8 h-8 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin"></span>
                             </div>
+                            <!-- State 2: load_error -->
+                            <div v-else-if="funnelPassengersError" class="bg-rose-50 border border-rose-200 p-8 rounded-2xl text-center space-y-3">
+                                <p class="text-sm font-bold text-rose-800">{{ funnelPassengersError }}</p>
+                                <button
+                                    @click="fetchFunnelPassengers(funnelPagination?.page || 1)"
+                                    class="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold rounded-xl shadow-sm transition-all"
+                                >
+                                    Повторить
+                                </button>
+                            </div>
+                            <!-- State 3: loaded_empty -->
                             <div v-else-if="!funnelPassengers || funnelPassengers.length === 0" class="text-center py-20 text-slate-400">
                                 <p class="text-lg font-medium">Пассажиры не найдены по выбранным фильтрам</p>
                                 <button @click="resetFilters" class="mt-3 text-xs font-bold text-amber-600 underline">Сбросить фильтры</button>
                             </div>
+                            <!-- State 4: loaded_success -->
                             <div v-else class="overflow-x-auto">
                                 <table class="w-full text-left min-w-[1200px]">
                                     <thead class="bg-slate-50 border-b border-slate-100 text-[10px] uppercase text-slate-400 font-black tracking-widest">
