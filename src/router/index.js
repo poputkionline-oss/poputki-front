@@ -138,6 +138,16 @@ const router = createRouter({
             meta: { hideBottomNav: true }
         },
         {
+            // Short opaque landing link sent by SMS (Stage 3 — no phone/booking
+            // id/PII in the URL). Deliberately does NOT reveal the full ticket:
+            // it only shows a minimal trip preview and hands off to the
+            // existing Telegram claim flow for phone-ownership verification.
+            path: '/t/:token',
+            name: 'claim-landing',
+            component: () => import('../views/ClaimLandingView.vue'),
+            meta: { hideBottomNav: true }
+        },
+        {
             path: '/ticket-preview',
             name: 'ticket-preview',
             component: () => import('../views/TicketPreviewView.vue'),
@@ -252,7 +262,7 @@ router.beforeEach(async (to, from, next) => {
     const isAuthenticated = !!localStorage.getItem('token');
     user = JSON.parse(localStorage.getItem('user')); // Re-fetch after possible sync
     const isComplete = isProfileComplete(user);
-    const publicRoutes = ['auth', 'admin', 'admin-passenger-funnel', 'bus-admin', 'ride-details', 'landing', 'search', 'payment-result', 'ticket-verification', 'ticket-verify-alias', 'ticket-preview', 'terms', 'tracked-link-redirect', 'referral-link-redirect'];
+    const publicRoutes = ['auth', 'admin', 'admin-passenger-funnel', 'bus-admin', 'ride-details', 'landing', 'search', 'payment-result', 'ticket-verification', 'ticket-verify-alias', 'ticket-preview', 'claim-landing', 'terms', 'tracked-link-redirect', 'referral-link-redirect'];
 
     if (!publicRoutes.includes(to.name)) {
         if (!isAuthenticated || !isComplete) {
