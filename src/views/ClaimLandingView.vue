@@ -100,6 +100,21 @@ export default {
         }
     },
     async mounted() {
+        // Defense-in-depth alongside the hosting-level Referrer-Policy header
+        // (vercel.json): the token must never leak via the Referer header to
+        // any external link clicked from this page (Telegram included).
+        // SPA client-side navigation doesn't always re-trigger a fresh HTTP
+        // response with that header, so set it here too and restore on leave.
+        this._previousReferrerMeta = document.querySelector('meta[name="referrer"]');
+        this._previousReferrerContent = this._previousReferrerMeta?.getAttribute('content') || null;
+        let metaTag = this._previousReferrerMeta;
+        if (!metaTag) {
+            metaTag = document.createElement('meta');
+            metaTag.name = 'referrer';
+            document.head.appendChild(metaTag);
+        }
+        metaTag.setAttribute('content', 'no-referrer');
+
         if (!this.token) {
             this.error = 'SESSION_NOT_FOUND';
             this.loading = false;
@@ -112,6 +127,15 @@ export default {
             this.error = err.response?.data?.code || 'DEFAULT';
         } finally {
             this.loading = false;
+        }
+    },
+    unmounted() {
+        const metaTag = document.querySelector('meta[name="referrer"]');
+        if (!metaTag) return;
+        if (this._previousReferrerContent !== null) {
+            metaTag.setAttribute('content', this._previousReferrerContent);
+        } else {
+            metaTag.remove();
         }
     }
 };
