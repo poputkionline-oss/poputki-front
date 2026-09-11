@@ -148,6 +148,17 @@ const router = createRouter({
             meta: { hideBottomNav: true }
         },
         {
+            // Manual Booking Telegram Subscription Model (additive, feature-
+            // flagged on the backend). Deliberately a NEW, versioned path —
+            // never overlapping with the old /t/:claimToken landing above,
+            // which stays completely untouched and keeps working for
+            // already-sent SMS links until they naturally expire.
+            path: '/ticket-subscribe/:verificationToken',
+            name: 'ticket-subscribe',
+            component: () => import('../views/TicketSubscribeView.vue'),
+            meta: { hideBottomNav: true }
+        },
+        {
             path: '/ticket-preview',
             name: 'ticket-preview',
             component: () => import('../views/TicketPreviewView.vue'),
@@ -262,7 +273,7 @@ router.beforeEach(async (to, from, next) => {
     const isAuthenticated = !!localStorage.getItem('token');
     user = JSON.parse(localStorage.getItem('user')); // Re-fetch after possible sync
     const isComplete = isProfileComplete(user);
-    const publicRoutes = ['auth', 'admin', 'admin-passenger-funnel', 'bus-admin', 'ride-details', 'landing', 'search', 'payment-result', 'ticket-verification', 'ticket-verify-alias', 'ticket-preview', 'claim-landing', 'terms', 'tracked-link-redirect', 'referral-link-redirect'];
+    const publicRoutes = ['auth', 'admin', 'admin-passenger-funnel', 'bus-admin', 'ride-details', 'landing', 'search', 'payment-result', 'ticket-verification', 'ticket-verify-alias', 'ticket-preview', 'claim-landing', 'ticket-subscribe', 'terms', 'tracked-link-redirect', 'referral-link-redirect'];
 
     if (!publicRoutes.includes(to.name)) {
         if (!isAuthenticated || !isComplete) {
