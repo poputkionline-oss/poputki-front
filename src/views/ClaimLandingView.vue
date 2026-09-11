@@ -26,8 +26,8 @@
                     <div class="text-sm text-slate-500 mt-1" v-if="trip.carrierName">
                         {{ trip.carrierName }}
                     </div>
-                    <div class="text-sm text-slate-500 mt-1">
-                        Мест: {{ trip.passengerCount || 1 }}
+                    <div class="text-sm text-slate-500 mt-1" v-if="seatsLabel">
+                        {{ seatsLabel }}
                     </div>
                 </div>
 
@@ -97,6 +97,12 @@ export default {
         },
         errorHint() {
             return (ERROR_MESSAGES[this.error] || ERROR_MESSAGES.DEFAULT).hint;
+        },
+        seatsLabel() {
+            const seats = Array.isArray(this.trip?.seatNumbers) ? this.trip.seatNumbers : [];
+            if (seats.length === 0) return null;
+            if (seats.length === 1) return `Место: ${seats[0]}`;
+            return `Места: ${seats.join(', ')}`;
         }
     },
     async mounted() {
