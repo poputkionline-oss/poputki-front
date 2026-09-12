@@ -213,7 +213,8 @@ export default {
                 copyFeedback: '',
                 whatsAppError: '',
                 regenerating: false,
-                regenerationError: ''
+                regenerationError: '',
+                telegramSubscribersCount: null
             },
             ticketsState: 'idle', // 'idle' | 'loading' | 'success' | 'empty' | 'auth_error' | 'forbidden_error' | 'network_error'
             ticketsErrorMessage: '',
@@ -1497,8 +1498,22 @@ export default {
                 copyFeedback: '',
                 whatsAppError: '',
                 regenerating: true,
-                regenerationError: ''
+                regenerationError: '',
+                telegramSubscribersCount: null
             };
+
+            // Best-effort, non-blocking: an aggregate-only count of Telegram
+            // followers already attached to this booking. Never blocks or
+            // fails the claim-link flow above — a failure here just leaves
+            // the count hidden (null), same as the endpoint's own graceful
+            // degradation on the backend.
+            api.get(`/bus-admin/bookings/${bookingId}/telegram-subscribers-count`)
+                .then(res => {
+                    if (this.handoffModal.bookingId === bookingId) {
+                        this.handoffModal.telegramSubscribersCount = res.data?.telegram_subscribers_count ?? null;
+                    }
+                })
+                .catch(() => {});
 
             try {
                 const res = await api.post(`/bus-admin/bookings/${bookingId}/claim-link`);
@@ -3351,6 +3366,11 @@ watch: {
                         </div>
                         <span v-if="p.phone" class="text-slate-400 font-mono text-[10px]">{{ p.phone }}</span>
                     </div>
+                </div>
+
+                <!-- Telegram followers count: aggregate only, shown only when >0 -->
+                <div v-if="handoffModal.telegramSubscribersCount > 0" class="p-3 bg-sky-50 text-sky-800 rounded-2xl text-xs font-bold border border-sky-200 text-center">
+                    📲 Билет добавлен в Telegram: {{ handoffModal.telegramSubscribersCount }} раз
                 </div>
 
                 <!-- Already Claimed State -->
