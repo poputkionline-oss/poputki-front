@@ -205,6 +205,7 @@ export default {
                 bookingId: null,
                 claimUrl: '',
                 ticketUrl: '',
+                ticketSubscribeUrl: '',
                 expiresAt: null,
                 isClaimed: false,
                 passengers: [],
@@ -1244,6 +1245,7 @@ export default {
                         role: h.contact_role || f.contact_role || 'unknown',
                         bookingId: res.data.id || res.data.booking_id,
                         ticketUrl: h.ticket_url,
+                        ticketSubscribeUrl: h.ticket_subscribe_url || '',
                         claimUrl: h.claim_url,
                         expiresAt: h.expires_at,
                         isClaimed: false,
@@ -1391,8 +1393,8 @@ export default {
             }
         },
         openHandoffTicket() {
-            if (this.handoffModal.ticketUrl) {
-                const base = this.handoffModal.ticketUrl;
+            const base = this.effectiveTicketUrl();
+            if (base) {
                 const sep = base.includes('?') ? '&' : '?';
                 const previewUrl = `${base}${sep}preview=carrier`;
                 window.open(previewUrl, '_blank');
@@ -1401,7 +1403,7 @@ export default {
         async createHandoff(channel, phone = null) {
             const bookingId = this.handoffModal.bookingId;
             if (!bookingId) {
-                return { ticketUrl: this.handoffModal.ticketUrl };
+                return { ticketUrl: this.handoffModal.ticketUrl, ticketSubscribeUrl: this.handoffModal.ticketSubscribeUrl };
             }
             try {
                 const payload = { channel };
@@ -1411,19 +1413,32 @@ export default {
                 const res = await api.post(`/bus-admin/bookings/${bookingId}/handoff`, payload);
                 if (res.data?.ticketUrl) {
                     this.handoffModal.ticketUrl = res.data.ticketUrl;
+                    this.handoffModal.ticketSubscribeUrl = res.data.ticketSubscribeUrl || '';
                     this.handoffModal.handoffId = res.data.handoffId;
                     return res.data;
                 }
             } catch (err) {
                 console.warn('[BusAdmin] createHandoff API failed, using fallback ticketUrl:', err.message);
             }
-            return { ticketUrl: this.handoffModal.ticketUrl };
+            return { ticketUrl: this.handoffModal.ticketUrl, ticketSubscribeUrl: this.handoffModal.ticketSubscribeUrl };
+        },
+        // Manual Booking Telegram Subscription Model (additive, feature-
+        // flagged on the backend): every share/copy/open action below must
+        // prefer the new public subscribe page over the legacy ticket_url
+        // whenever the backend has provided one (i.e. the flag is on for
+        // this manual booking) — never the other way around, and never a
+        // silent mix of the two. When the flag is off, ticketSubscribeUrl is
+        // always empty and every one of these falls through to exactly the
+        // same ticketUrl-based behavior as before this model existed.
+        effectiveTicketUrl(handoffData) {
+            return handoffData?.ticketSubscribeUrl || handoffData?.ticketUrl
+                || this.handoffModal.ticketSubscribeUrl || this.handoffModal.ticketUrl;
         },
         async copyHandoffLink() {
             this.handoffModal.copyFeedback = '';
             try {
                 const handoffData = await this.createHandoff('copy_link');
-                const ticketUrl = handoffData?.ticketUrl || this.handoffModal.ticketUrl;
+                const ticketUrl = this.effectiveTicketUrl(handoffData);
                 if (!ticketUrl) {
                     this.handoffModal.copyFeedback = 'Ссылка на билет ещё не готова';
                     return;
@@ -1482,6 +1497,7 @@ export default {
                 role: role,
                 bookingId: bookingId,
                 ticketUrl: '',
+                ticketSubscribeUrl: '',
                 claimUrl: '',
                 expiresAt: null,
                 isClaimed: false,
@@ -1519,6 +1535,7 @@ export default {
                 const res = await api.post(`/bus-admin/bookings/${bookingId}/claim-link`);
                 if (res.data) {
                     this.handoffModal.ticketUrl = res.data.ticket_url || '';
+                    this.handoffModal.ticketSubscribeUrl = res.data.ticket_subscribe_url || '';
                     this.handoffModal.claimUrl = res.data.claim_url || '';
                     this.handoffModal.expiresAt = res.data.expires_at || null;
                     this.handoffModal.isClaimed = false;
@@ -1558,7 +1575,7 @@ export default {
 
             try {
                 const handoffData = await this.createHandoff('whatsapp', phone);
-                const ticketUrl = handoffData?.ticketUrl || this.handoffModal.ticketUrl;
+                const ticketUrl = this.effectiveTicketUrl(handoffData);
 
                 if (!ticketUrl) {
                     if (newWindow) newWindow.close();
@@ -1625,7 +1642,7 @@ export default {
 
             try {
                 const handoffData = await this.createHandoff('sms', phone);
-                const ticketUrl = handoffData?.ticketUrl || this.handoffModal.ticketUrl;
+                const ticketUrl = this.effectiveTicketUrl(handoffData);
 
                 if (!ticketUrl) {
                     this.handoffModal.phoneError = 'Ссылка на билет ещё не готова.';
@@ -1691,7 +1708,7 @@ export default {
 
             try {
                 const handoffData = await this.createHandoff('telegram');
-                const ticketUrl = handoffData?.ticketUrl || this.handoffModal.ticketUrl;
+                const ticketUrl = this.effectiveTicketUrl(handoffData);
 
                 if (!ticketUrl) {
                     if (newWindow) newWindow.close();
