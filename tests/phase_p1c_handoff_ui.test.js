@@ -126,11 +126,18 @@ describe('PHASE P.1C–P.1E — FRONTEND HANDOFF & TICKET CORRELATION', () => {
         });
 
         it('[P1D-03] TicketVerificationView calls POST /api/claims/track-open with zero PII', () => {
-            assert.ok(ticketVerificationSource.includes("api.post('/claims/track-open'"));
-            assert.ok(ticketVerificationSource.includes('ticketToken: this.token'));
-            assert.ok(ticketVerificationSource.includes('handoffId'));
-            // Must not send sensitive fields or trust client bookingId
-            assert.ok(!ticketVerificationSource.includes("bookingId: this.ticket?.bookingId"));
+            const methodStart = ticketVerificationSource.indexOf('async trackTicketOpen()');
+            const methodEnd = ticketVerificationSource.indexOf('async verifyTicket()');
+            const trackOpenBlock = ticketVerificationSource.slice(methodStart, methodEnd);
+            assert.ok(trackOpenBlock.includes("api.post('/claims/track-open'"));
+            assert.ok(trackOpenBlock.includes('ticketToken: this.token'));
+            assert.ok(trackOpenBlock.includes('handoffId'));
+            // Must not send sensitive fields or trust client bookingId — scoped
+            // to trackTicketOpen() itself; other methods (the legacy
+            // start-session call and the subscription-model start-subscription
+            // call) legitimately send the already-loaded ticket's bookingId as
+            // a cross-check, which is unrelated to this endpoint's PII rule.
+            assert.ok(!trackOpenBlock.includes("bookingId: this.ticket?.bookingId"));
         });
 
         it('[P1E-01] Passenger Telegram CTA calls start-session forwarding handoffId', () => {
