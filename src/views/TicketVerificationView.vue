@@ -12,7 +12,9 @@ export default {
             claiming: false,
             claimError: null,
             telegramDeepLink: null,
-            openTracked: false
+            openTracked: false,
+            subscribing: false,
+            subscribeError: null
         };
     },
     computed: {
@@ -142,6 +144,57 @@ export default {
                 this.claimError = err.response?.data?.error || 'Не удалось подготовить Telegram. Попробуйте ещё раз.';
             } finally {
                 this.claiming = false;
+            }
+        },
+        // Manual Booking Telegram Subscription Model (additive, flag-gated
+        // server-side via ticket.canSubscribe — see verifyTicket()). Entirely
+        // separate from startClaimSession()/claimError/claiming above: this
+        // path is only ever reached when the backend told us at ticket-load
+        // time that this booking qualifies (flag on + manual + still
+        // subscribable). It must NEVER fall back to the legacy claim flow on
+        // its own error — a network hiccup or an ambiguous failure here only
+        // ever shows subscribeError, never touches startClaimSession/claimError.
+        async onSubscribeClick(e) {
+            if (e) e.preventDefault();
+            // Blocks a rapid repeat click from starting a second
+            // subscription session while the first request is in flight.
+            if (this.subscribing) return;
+
+            this.subscribing = true;
+            this.subscribeError = null;
+
+            // Same pre-opened-window pattern as TicketSubscribeView.vue's
+            // onSubscribeClick / BusAdminView.vue's openHandoffTelegram: a
+            // blank tab is opened synchronously, inside this click's user
+            // gesture, then navigated to the Telegram deep link once the
+            // async request resolves — required for iOS Safari to honor the
+            // navigation despite the request in between.
+            let newWindow = null;
+            try {
+                newWindow = window.open('about:blank', '_blank');
+            } catch (wErr) {
+                newWindow = null;
+            }
+
+            try {
+                const res = await api.post('/claims/start-subscription', {
+                    verificationToken: this.token,
+                    bookingId: this.ticket?.bookingId
+                });
+                const deepLink = res.data?.deepLink;
+                if (typeof deepLink !== 'string' || !deepLink.startsWith('https://t.me/')) {
+                    throw new Error('INVALID_TELEGRAM_LINK');
+                }
+                if (newWindow && !newWindow.closed) {
+                    newWindow.location.href = deepLink;
+                } else {
+                    window.open(deepLink, '_blank');
+                }
+            } catch (err) {
+                if (newWindow && !newWindow.closed) newWindow.close();
+                this.subscribeError = 'Не удалось подготовить Telegram. Попробуйте ещё раз.';
+            } finally {
+                this.subscribing = false;
             }
         }
     },
@@ -273,30 +326,55 @@ export default {
                         <p class="text-xs text-slate-600 leading-relaxed">
                             Подключите Telegram, чтобы получать уведомления об изменениях рейса и сохранить билет в боте.
                         </p>
-                        <a
-                            v-if="telegramDeepLink"
-                            :href="telegramDeepLink"
-                            class="w-full py-3.5 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
-                        >
-                            <span>✈️ Открыть Telegram</span>
-                        </a>
-                        <button
-                            v-else
-                            @click="startClaimSession"
-                            :disabled="claiming"
-                            class="w-full py-3.5 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-wait"
-                        >
-                            <span v-if="claiming" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                            <span>{{ claiming ? 'Подготавливаем Telegram…' : '✈️ Открыть билет в Telegram' }}</span>
-                        </button>
-                        <div v-if="telegramDeepLink" class="text-[11px] font-semibold text-sky-700">
-                            Ссылка готова. Нажмите ещё раз, чтобы открыть Telegram.
-                        </div>
+
+                        <!-- Manual Booking Telegram Subscription Model path:
+                             server-decided (ticket.canSubscribe), single
+                             click, never falls back to the legacy flow below. -->
+                        <template v-if="ticket.canSubscribe">
+                            <button
+                                type="button"
+                                @click="onSubscribeClick"
+                                :disabled="subscribing"
+                                class="w-full py-3.5 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-wait"
+                            >
+                                <span v-if="subscribing" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                                <span>{{ subscribing ? 'Открываем Telegram…' : '✈️ Подключить уведомления в Telegram' }}</span>
+                            </button>
+                            <div v-if="subscribeError" class="text-[11px] font-bold text-rose-600">
+                                {{ subscribeError }}
+                            </div>
+                        </template>
+
+                        <!-- Legacy claim flow: unchanged text and behavior,
+                             used whenever the flag is off, this booking isn't
+                             manual, or the trip is no longer subscribable. -->
+                        <template v-else>
+                            <a
+                                v-if="telegramDeepLink"
+                                :href="telegramDeepLink"
+                                class="w-full py-3.5 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                            >
+                                <span>✈️ Открыть Telegram</span>
+                            </a>
+                            <button
+                                v-else
+                                @click="startClaimSession"
+                                :disabled="claiming"
+                                class="w-full py-3.5 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-wait"
+                            >
+                                <span v-if="claiming" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                                <span>{{ claiming ? 'Подготавливаем Telegram…' : '✈️ Открыть билет в Telegram' }}</span>
+                            </button>
+                            <div v-if="telegramDeepLink" class="text-[11px] font-semibold text-sky-700">
+                                Ссылка готова. Нажмите ещё раз, чтобы открыть Telegram.
+                            </div>
+                            <div v-if="claimError" class="text-[11px] font-bold text-rose-600">
+                                {{ claimError }}
+                            </div>
+                        </template>
+
                         <div class="text-[10px] text-slate-400">
                             Билет действителен для посадки и без подключения Telegram.
-                        </div>
-                        <div v-if="claimError" class="text-[11px] font-bold text-rose-600">
-                            {{ claimError }}
                         </div>
                     </div>
 
