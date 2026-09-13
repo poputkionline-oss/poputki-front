@@ -156,6 +156,11 @@ export default {
         // ever shows subscribeError, never touches startClaimSession/claimError.
         async onSubscribeClick(e) {
             if (e) e.preventDefault();
+            // Defense in depth: the button that calls this is only ever
+            // rendered when ticket.canSubscribe is true (see template), but
+            // this guard keeps that invariant true even if this method were
+            // ever called from anywhere else.
+            if (!this.ticket?.canSubscribe) return;
             // Blocks a rapid repeat click from starting a second
             // subscription session while the first request is in flight.
             if (this.subscribing) return;
@@ -327,27 +332,44 @@ export default {
                             Подключите Telegram, чтобы получать уведомления об изменениях рейса и сохранить билет в боте.
                         </p>
 
-                        <!-- Manual Booking Telegram Subscription Model path:
-                             server-decided (ticket.canSubscribe), single
-                             click, never falls back to the legacy flow below. -->
-                        <template v-if="ticket.canSubscribe">
-                            <button
-                                type="button"
-                                @click="onSubscribeClick"
-                                :disabled="subscribing"
-                                class="w-full py-3.5 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-wait"
-                            >
-                                <span v-if="subscribing" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                                <span>{{ subscribing ? 'Открываем Telegram…' : '✈️ Подключить уведомления в Telegram' }}</span>
-                            </button>
-                            <div v-if="subscribeError" class="text-[11px] font-bold text-rose-600">
-                                {{ subscribeError }}
+                        <!-- Manual Booking Telegram Subscription Model:
+                             server-decided (ticket.subscriptionModelActive),
+                             mutually exclusive with the legacy flow below —
+                             the legacy flow (/claims/start-session) is only
+                             ever allowed when subscriptionModelActive is
+                             explicitly false. -->
+                        <template v-if="ticket.subscriptionModelActive">
+                            <!-- Currently subscribable: one click, calls only
+                                 /claims/start-subscription. -->
+                            <template v-if="ticket.canSubscribe">
+                                <button
+                                    type="button"
+                                    @click="onSubscribeClick"
+                                    :disabled="subscribing"
+                                    class="w-full py-3.5 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-wait"
+                                >
+                                    <span v-if="subscribing" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                                    <span>{{ subscribing ? 'Открываем Telegram…' : '✈️ Подключить уведомления в Telegram' }}</span>
+                                </button>
+                                <div v-if="subscribeError" class="text-[11px] font-bold text-rose-600">
+                                    {{ subscribeError }}
+                                </div>
+                            </template>
+
+                            <!-- On the new model, but not currently
+                                 subscribable (e.g. trip already arrived, or
+                                 the check itself failed server-side) — never
+                                 call either start endpoint, never fall back
+                                 to the legacy claim flow. -->
+                            <div v-else class="text-[11px] font-semibold text-slate-500">
+                                Подключение уведомлений для этой поездки сейчас недоступно
                             </div>
                         </template>
 
                         <!-- Legacy claim flow: unchanged text and behavior,
-                             used whenever the flag is off, this booking isn't
-                             manual, or the trip is no longer subscribable. -->
+                             used only when subscriptionModelActive is
+                             explicitly false (flag off, or this booking
+                             isn't manual). -->
                         <template v-else>
                             <a
                                 v-if="telegramDeepLink"

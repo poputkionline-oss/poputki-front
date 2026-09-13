@@ -9,14 +9,24 @@
  * as phase_p1g3a_addendum_bus_tab_deeplink.test.js) instead of only
  * source-string matching — the whole point of this fix is runtime branching
  * behavior (never falling back to the legacy flow on error, blocking a
- * rapid double-click, closing the pre-opened window on failure), which a
- * static regex can't prove.
+ * rapid double-click, closing the pre-opened window on failure, never
+ * calling either start endpoint when the booking isn't currently
+ * subscribable), which a static regex can't prove.
  *
- * ticket.canSubscribe is a server-decided boolean (see
- * routes/busTickets.js's GET /verify/:token and its own backend test file,
+ * ticket.subscriptionModelActive / ticket.canSubscribe are two INDEPENDENT
+ * server-decided booleans (see routes/busTickets.js's GET /verify/:token and
+ * its own backend test file,
  * tests/phase_subscription_model_verify_ticket_canSubscribe.test.js in
- * poputki-backend) — the frontend here only ever branches on that flag; it
- * never re-derives "is this booking subscribable" itself.
+ * poputki-backend) — the frontend here only ever branches on those two
+ * flags; it never re-derives "is this booking manual/subscribable" itself,
+ * and never looks at claim_status/claimed_by_user_id to decide which model
+ * to use.
+ *
+ *   subscriptionModelActive | canSubscribe | frontend behavior
+ *   ------------------------|--------------|--------------------------------
+ *   false                   | false        | legacy /claims/start-session
+ *   true                    | false        | neither endpoint; "unavailable"
+ *   true                    | true         | one-click /claims/start-subscription
  */
 
 import { describe, it, beforeEach, afterEach, mock } from 'node:test';
@@ -43,7 +53,7 @@ class FakeWindow {
 function makeFakeThis(overrides = {}) {
     return {
         token: 'tok-123',
-        ticket: { bookingId: 900, canSubscribe: true },
+        ticket: { bookingId: 900, subscriptionModelActive: true, canSubscribe: true },
         subscribing: false,
         subscribeError: null,
         claiming: false,
@@ -77,7 +87,7 @@ describe('TicketVerificationView.vue — real onSubscribeClick() behavior', () =
         if (originalWindowOpen) global.window.open = originalWindowOpen;
     });
 
-    it('1. success: opens a blank window synchronously, calls ONLY /claims/start-subscription (never /claims/start-session), then navigates the pre-opened window', async () => {
+    it('1. manual + flag on + subscribable (both flags true): opens a blank window synchronously, calls ONLY /claims/start-subscription (never /claims/start-session), then navigates the pre-opened window', async () => {
         const postCalls = [];
         mock.method(api, 'post', async (url, body) => {
             postCalls.push({ url, body });
@@ -100,7 +110,20 @@ describe('TicketVerificationView.vue — real onSubscribeClick() behavior', () =
         assert.equal(fakeThis.subscribeError, null);
     });
 
-    it('2. a rapid second click while the first request is still in flight is blocked — only one session is started', async () => {
+    it('2. manual + flag on but NOT currently subscribable (subscriptionModelActive true, canSubscribe false): onSubscribeClick calls neither endpoint and never starts a session', async () => {
+        const postCalls = [];
+        mock.method(api, 'post', async (url, body) => { postCalls.push(url); return { data: {} }; });
+
+        const fakeThis = makeFakeThis({ ticket: { bookingId: 900, subscriptionModelActive: true, canSubscribe: false } });
+        await TicketVerificationView.methods.onSubscribeClick.call(fakeThis, { preventDefault() {} });
+
+        assert.equal(postCalls.length, 0, 'neither /claims/start-subscription nor /claims/start-session may be called when canSubscribe is false');
+        assert.equal(openedWindows.length, 0, 'no window may be pre-opened when the booking is not currently subscribable');
+        assert.equal(fakeThis.subscribing, false);
+        assert.equal(fakeThis.subscribeError, null, 'this is not an error state — the template shows the plain "unavailable" message instead');
+    });
+
+    it('3. a rapid second click while the first request is still in flight is blocked — only one session is started', async () => {
         let resolveFirst;
         const pending = new Promise(resolve => { resolveFirst = resolve; });
         const postCalls = [];
@@ -122,7 +145,7 @@ describe('TicketVerificationView.vue — real onSubscribeClick() behavior', () =
         assert.equal(openedWindows.length, 1, 'only one window must ever be opened across both taps');
     });
 
-    it('3. on failure: the pre-opened window is closed and a plain-language error is shown, never a silent fallback', async () => {
+    it('4. on failure: the pre-opened window is closed and a plain-language error is shown, never a silent fallback', async () => {
         mock.method(api, 'post', async () => {
             throw new Error('network down');
         });
@@ -138,7 +161,7 @@ describe('TicketVerificationView.vue — real onSubscribeClick() behavior', () =
         assert.equal(fakeThis.subscribing, false);
     });
 
-    it('4. an ambiguous/network subscribe error never touches the legacy claiming/claimError state — no automatic fallback to the claim flow', async () => {
+    it('5. an ambiguous/network subscribe error never touches the legacy claiming/claimError state — no automatic fallback to the claim flow', async () => {
         mock.method(api, 'post', async () => {
             throw new Error('ambiguous failure');
         });
@@ -151,10 +174,10 @@ describe('TicketVerificationView.vue — real onSubscribeClick() behavior', () =
         assert.equal(fakeThis.telegramDeepLink, null, 'legacy telegramDeepLink must be untouched');
     });
 
-    it('5. verifyTicket() (page load) never calls /claims/start-subscription or /claims/start-session by itself', async () => {
+    it('6. verifyTicket() (page load) never calls /claims/start-subscription or /claims/start-session by itself, for any flag combination', async () => {
         const postCalls = [];
         mock.method(api, 'post', async (url, body) => { postCalls.push(url); return { data: {} }; });
-        mock.method(api, 'get', async () => ({ data: { valid: true, ticket: { bookingId: 900, canSubscribe: true } } }));
+        mock.method(api, 'get', async () => ({ data: { valid: true, ticket: { bookingId: 900, subscriptionModelActive: true, canSubscribe: true } } }));
 
         const fakeThis = {
             token: 'tok-123',
@@ -168,33 +191,50 @@ describe('TicketVerificationView.vue — real onSubscribeClick() behavior', () =
         await TicketVerificationView.methods.verifyTicket.call(fakeThis);
 
         assert.equal(postCalls.length, 0, 'loading the ticket page must never itself create a claim or subscription session');
+        assert.equal(fakeThis.ticket.subscriptionModelActive, true);
         assert.equal(fakeThis.ticket.canSubscribe, true);
     });
 });
 
 describe('TicketVerificationView.vue — template branching (source-level)', () => {
-    it('6. the subscription CTA is gated on ticket.canSubscribe, and the legacy CTA is its v-else — mutually exclusive, so flag-off/non-manual/non-subscribable bookings all render the untouched legacy button', () => {
-        assert.match(view, /<template v-if="ticket\.canSubscribe">/);
-        const subscribeBlockIdx = view.indexOf('<template v-if="ticket.canSubscribe">');
-        const elseBlockIdx = view.indexOf('<template v-else>', subscribeBlockIdx);
-        assert.ok(elseBlockIdx > subscribeBlockIdx, 'the legacy block must be the v-else sibling of the subscription block');
+    it('7. subscriptionModelActive is the ONLY gate for the legacy flow — the subscription block and the legacy block are mutually exclusive v-if/v-else siblings', () => {
+        assert.match(view, /<template v-if="ticket\.subscriptionModelActive">/);
+        const subscribeBlockIdx = view.indexOf('<template v-if="ticket.subscriptionModelActive">');
+        const legacyElseIdx = view.indexOf('<template v-else>', subscribeBlockIdx);
+        assert.ok(legacyElseIdx > subscribeBlockIdx, 'the legacy block must be the v-else sibling of the subscriptionModelActive block');
 
-        const subscribeBlock = view.slice(subscribeBlockIdx, elseBlockIdx);
-        assert.match(subscribeBlock, /@click="onSubscribeClick"/);
-        assert.ok(subscribeBlock.includes('Подключить уведомления в Telegram'));
+        const activeBlock = view.slice(subscribeBlockIdx, legacyElseIdx);
+        const legacyBlock = view.slice(legacyElseIdx);
 
-        const legacyBlock = view.slice(elseBlockIdx);
+        // Inside the active block, canSubscribe further gates the one-click
+        // CTA from the "unavailable" message — never the legacy flow.
+        assert.match(activeBlock, /<template v-if="ticket\.canSubscribe">/);
+        assert.match(activeBlock, /@click="onSubscribeClick"/);
+        assert.ok(activeBlock.includes('Подключить уведомления в Telegram'));
+        assert.ok(activeBlock.includes('Подключение уведомлений для этой поездки сейчас недоступно'), 'the not-currently-subscribable message must be present');
+        assert.ok(!activeBlock.includes('@click="startClaimSession"'), 'the legacy claim method must never be wired inside the subscriptionModelActive block');
+
         assert.match(legacyBlock, /@click="startClaimSession"/);
         assert.ok(legacyBlock.includes('Открыть билет в Telegram'), 'legacy button text must be unchanged');
         assert.ok(legacyBlock.includes('Ссылка готова. Нажмите ещё раз, чтобы открыть Telegram.'), 'legacy two-tap hint must be unchanged');
+        assert.ok(!legacyBlock.includes('@click="onSubscribeClick"'), 'the subscription method must never be wired inside the legacy block');
     });
 
-    it('7. onSubscribeClick is defined as its own method, entirely separate from startClaimSession', () => {
+    it('8. neither branch condition ever references claim_status/claimed_by_user_id — model selection is independent of claim state', () => {
+        const gateLines = view.split('\n').filter(l => l.includes('ticket.subscriptionModelActive') || l.includes('ticket.canSubscribe'));
+        assert.ok(gateLines.length > 0);
+        for (const line of gateLines) {
+            assert.ok(!line.includes('claim_status'), `branching condition must not reference claim_status: ${line.trim()}`);
+            assert.ok(!line.includes('claimed_by_user_id'), `branching condition must not reference claimed_by_user_id: ${line.trim()}`);
+        }
+    });
+
+    it('9. onSubscribeClick is defined as its own method, entirely separate from startClaimSession', () => {
         assert.match(view, /async onSubscribeClick\(e\)\s*\{/);
         assert.match(view, /async startClaimSession\(\)\s*\{/);
     });
 
-    it('8. data() declares subscribing/subscribeError, independent of claiming/claimError', () => {
+    it('10. data() declares subscribing/subscribeError, independent of claiming/claimError', () => {
         assert.match(view, /subscribing: false,\s*\n\s*subscribeError: null/);
         assert.ok(view.includes('claiming: false'));
         assert.ok(view.includes('claimError: null'));
