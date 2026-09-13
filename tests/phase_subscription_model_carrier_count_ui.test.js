@@ -60,10 +60,13 @@ describe('BusAdminView.vue — telegram-subscribers-count fetch', () => {
 describe('BusAdminView.vue — template renders the count only when > 0, aggregate only', () => {
     const templateBlock = content.slice(content.indexOf('v-if="handoffModal.show"'));
 
-    it('renders "Билет добавлен в Telegram: N раз" gated on count > 0', () => {
+    it('renders "Подписчиков на уведомления в Telegram: N" gated on count > 0, without the word "раз"', () => {
         assert.match(templateBlock, /v-if="handoffModal\.telegramSubscribersCount > 0"/);
-        assert.ok(templateBlock.includes('Билет добавлен в Telegram'));
-        assert.match(templateBlock, /\{\{\s*handoffModal\.telegramSubscribersCount\s*\}\}\s*раз/);
+        assert.ok(templateBlock.includes('Подписчиков на уведомления в Telegram'));
+        assert.match(templateBlock, /Подписчиков на уведомления в Telegram:\s*\{\{\s*handoffModal\.telegramSubscribersCount\s*\}\}/);
+        const bannerIdx = templateBlock.indexOf('handoffModal.telegramSubscribersCount > 0');
+        const bannerBlock = templateBlock.slice(bannerIdx, bannerIdx + 300);
+        assert.ok(!bannerBlock.includes('раз'), 'banner must not use the count-dependent word "раз"');
     });
 
     it('the banner never renders any per-subscriber identity field (aggregate count only)', () => {

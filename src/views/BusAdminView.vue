@@ -3387,7 +3387,7 @@ watch: {
 
                 <!-- Telegram followers count: aggregate only, shown only when >0 -->
                 <div v-if="handoffModal.telegramSubscribersCount > 0" class="p-3 bg-sky-50 text-sky-800 rounded-2xl text-xs font-bold border border-sky-200 text-center">
-                    📲 Билет добавлен в Telegram: {{ handoffModal.telegramSubscribersCount }} раз
+                    📲 Подписчиков на уведомления в Telegram: {{ handoffModal.telegramSubscribersCount }}
                 </div>
 
                 <!-- Already Claimed State -->
