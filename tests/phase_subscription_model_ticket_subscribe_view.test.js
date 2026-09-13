@@ -66,8 +66,8 @@ describe('TICKET SUBSCRIBE — required texts (owner-approved copy)', () => {
         assert.ok(view.includes('перешлите'));
     });
 
-    it('10. button text is exactly "Добавить билет в Telegram"', () => {
-        assert.match(view, />\s*Добавить билет в Telegram\s*</);
+    it('10. button text is "Добавить билет в Telegram", with a loading-state variant while a request is in flight', () => {
+        assert.match(view, /\{\{\s*starting\s*\?\s*'Открываем Telegram…'\s*:\s*'Добавить билет в Telegram'\s*\}\}/);
     });
 
     it('11. does NOT contain the retired "only the passenger should press this" warning (inconsistent with multi-subscriber model)', () => {
@@ -86,9 +86,14 @@ describe('TICKET SUBSCRIBE — privacy and safety invariants', () => {
         assert.ok(view.includes('unmounted()'));
     });
 
-    it('14. no window.location / raw query-param href assembly (no open-redirect surface)', () => {
-        assert.ok(!view.includes('window.location'));
+    it('14. no raw query-param href assembly (no open-redirect surface); the only window.location use is reading the current, already-trusted page URL for the forward-share button', () => {
         assert.ok(!view.includes('this.$route.query'));
+        const locationUses = view.match(/window\.location(\.\w+)?/g) || [];
+        for (const use of locationUses) {
+            assert.equal(use, 'window.location.href', `unexpected window.location usage: ${use}`);
+        }
+        // Never assigned to (that would be a redirect surface) — only read.
+        assert.ok(!/window\.location\.href\s*=/.test(view));
     });
 
     it('15. error states are mapped via a table, never echo a raw backend code as free text', () => {
@@ -99,6 +104,63 @@ describe('TICKET SUBSCRIBE — privacy and safety invariants', () => {
     it('16. hides the subscribe button when canSubscribe is false (cancelled/completed/grace-period-expired)', () => {
         assert.match(view, /v-if="canSubscribe"/);
         assert.match(view, /v-if="!canSubscribe"/);
+    });
+});
+
+describe('TICKET SUBSCRIBE — first-tap Telegram open (no artificial double click)', () => {
+    const methodsBlock = view.slice(view.indexOf('onSubscribeClick(e) {'), view.indexOf('onForwardClick() {'));
+
+    it('17. opens a blank window synchronously, inside the click handler, before the async start-subscription call', () => {
+        const openIdx = methodsBlock.indexOf("window.open('about:blank', '_blank')");
+        const fetchIdx = methodsBlock.indexOf('/claims/start-subscription');
+        assert.ok(openIdx > -1, 'must synchronously pre-open a window to preserve the user-gesture context');
+        assert.ok(openIdx < fetchIdx, 'the window must be opened before the async request, not after');
+    });
+
+    it('18. navigates the pre-opened window to the deep link once resolved, rather than requiring a second tap', () => {
+        assert.match(methodsBlock, /newWindow\.location\.href\s*=\s*deepLink/);
+    });
+
+    it('19. a retry tap after telegramDeepLink is already set reopens the same link and does not call start-subscription again', () => {
+        const retryIdx = methodsBlock.indexOf('if (this.telegramDeepLink)');
+        assert.ok(retryIdx > -1);
+        const retryBlock = methodsBlock.slice(retryIdx, retryIdx + 500);
+        assert.match(retryBlock, /window\.open\(this\.telegramDeepLink,\s*'_blank'\)/);
+        assert.match(retryBlock, /return;/);
+    });
+
+    it('20. guards against a second concurrent tap starting a second session while one is already in flight', () => {
+        const guardIdx = methodsBlock.indexOf('if (this.starting) return;');
+        assert.ok(guardIdx > -1 && guardIdx < methodsBlock.indexOf('this.starting = true;'));
+    });
+});
+
+describe('TICKET SUBSCRIBE — "Переслать билет пассажиру" forward/share button', () => {
+    it('21. renders a secondary button labeled exactly "Переслать билет пассажиру"', () => {
+        assert.match(view, /@click="onForwardClick"[\s\S]*?Переслать билет пассажиру/);
+    });
+
+    it('22. onForwardClick never calls start-subscription or any backend endpoint (pure client-side share/copy)', () => {
+        const start = view.indexOf('async onForwardClick()');
+        assert.ok(start > -1, 'onForwardClick method not found');
+        const block = view.slice(start, view.indexOf('}\n    }\n};', start));
+        assert.ok(!block.includes('api.post'));
+        assert.ok(!block.includes('api.get'));
+        assert.ok(!block.includes('start-subscription'));
+    });
+
+    it('23. prefers the Web Share API (navigator.share) when available', () => {
+        const start = view.indexOf('async onForwardClick()');
+        const block = view.slice(start, view.indexOf('async onForwardClick()') + 900);
+        assert.match(block, /navigator\.share\s*\(/);
+    });
+
+    it('24. falls back to copyToClipboard and shows "Ссылка на билет скопирована" when Web Share is unavailable', () => {
+        assert.ok(view.includes("import { copyToClipboard } from '../telegram';"));
+        const start = view.indexOf('async onForwardClick()');
+        const block = view.slice(start, view.indexOf('async onForwardClick()') + 900);
+        assert.match(block, /copyToClipboard\(shareUrl\)/);
+        assert.ok(block.includes('Ссылка на билет скопирована'));
     });
 });
 

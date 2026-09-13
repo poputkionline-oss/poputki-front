@@ -47,10 +47,21 @@
                     :class="{ 'opacity-60 pointer-events-none': starting }"
                     @click="onSubscribeClick"
                 >
-                    Добавить билет в Telegram
+                    {{ starting ? 'Открываем Telegram…' : 'Добавить билет в Telegram' }}
                 </a>
 
                 <p v-if="subscribeError" class="text-xs text-rose-600 text-center">{{ subscribeError }}</p>
+
+                <button
+                    v-if="canSubscribe"
+                    type="button"
+                    class="block w-full text-center bg-white hover:bg-slate-50 text-slate-700 font-medium rounded-xl py-3 border border-slate-200 transition-colors"
+                    @click="onForwardClick"
+                >
+                    Переслать билет пассажиру
+                </button>
+
+                <p v-if="forwardFeedback" class="text-xs text-emerald-600 text-center">{{ forwardFeedback }}</p>
             </div>
         </div>
     </div>
@@ -58,6 +69,7 @@
 
 <script>
 import api from '../api';
+import { copyToClipboard } from '../telegram';
 
 const ERROR_MESSAGES = {
     INVALID_TOKEN: {
@@ -85,7 +97,8 @@ export default {
             canSubscribe: false,
             telegramDeepLink: null,
             starting: false,
-            subscribeError: null
+            subscribeError: null,
+            forwardFeedback: null
         };
     },
     computed: {
@@ -146,16 +159,38 @@ export default {
     },
     methods: {
         async onSubscribeClick(e) {
-            // A deep link already fetched on a previous tap is followed as-is
-            // via the native <a href> on THIS synchronous tap (iOS Safari
-            // only honors a Telegram universal link from a direct,
-            // synchronous user gesture — same constraint documented in
-            // TicketVerificationView.vue's startClaimSession()). The first
-            // tap only fetches the link and never navigates.
-            if (this.telegramDeepLink || this.starting) return;
             e.preventDefault();
+            // Guard against a second tap firing a second session-start request
+            // while the first is still in flight, and against re-fetching a
+            // link we already have.
+            if (this.starting) return;
+
+            if (this.telegramDeepLink) {
+                // Retry tap after a link was already fetched (e.g. the popup
+                // was closed or Telegram didn't launch) — reopen the same
+                // link, never start a second subscription session.
+                window.open(this.telegramDeepLink, '_blank');
+                return;
+            }
+
             this.starting = true;
             this.subscribeError = null;
+
+            // Open a blank tab synchronously, inside this click's user
+            // gesture, and only navigate it once the deep link is known.
+            // iOS Safari (and other mobile browsers) only allow a Telegram
+            // universal-link navigation within a direct synchronous user
+            // gesture; a window opened synchronously keeps that gesture
+            // alive across the await below, so the first tap can open
+            // Telegram directly instead of merely fetching the link. Same
+            // pattern as BusAdminView.vue's openHandoffTelegram().
+            let newWindow = null;
+            try {
+                newWindow = window.open('about:blank', '_blank');
+            } catch (wErr) {
+                newWindow = null;
+            }
+
             try {
                 const res = await api.post('/claims/start-subscription', { verificationToken: this.token });
                 const deepLink = res.data?.deepLink;
@@ -163,11 +198,46 @@ export default {
                     throw new Error('INVALID_TELEGRAM_LINK');
                 }
                 this.telegramDeepLink = deepLink;
+                if (newWindow && !newWindow.closed) {
+                    newWindow.location.href = deepLink;
+                } else {
+                    // Popup was blocked (e.g. browser blocked the
+                    // about:blank open itself) — fall back to a direct
+                    // open, which still runs inside this same click
+                    // handler's gesture.
+                    window.open(deepLink, '_blank');
+                }
             } catch (err) {
+                if (newWindow && !newWindow.closed) newWindow.close();
                 this.subscribeError = 'Не удалось подготовить Telegram. Попробуйте ещё раз.';
             } finally {
                 this.starting = false;
             }
+        },
+        async onForwardClick() {
+            // Pure client-side share/copy of the already-known public
+            // subscribe link — must never call the backend or create any
+            // session, follower, or claim record.
+            this.forwardFeedback = null;
+            const shareUrl = window.location.href;
+
+            if (navigator.share) {
+                try {
+                    await navigator.share({ url: shareUrl });
+                } catch (err) {
+                    // User cancelled the native share sheet, or the browser
+                    // refused it — not an error worth surfacing.
+                }
+                return;
+            }
+
+            const success = await copyToClipboard(shareUrl);
+            this.forwardFeedback = success
+                ? 'Ссылка на билет скопирована'
+                : 'Не удалось скопировать ссылку';
+            setTimeout(() => {
+                this.forwardFeedback = null;
+            }, 3000);
         }
     }
 };
