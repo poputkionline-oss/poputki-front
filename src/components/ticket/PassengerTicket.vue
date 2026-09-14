@@ -23,7 +23,9 @@ export default {
         return {
             openingTelegram: false,
             telegramError: '',
-            telegramDeepLink: ''
+            telegramDeepLink: '',
+            subscribing: false,
+            subscribeError: ''
         };
     },
     computed: {
@@ -86,11 +88,32 @@ export default {
             return 'https://t.me/Poputkionline_bot?startapp';
         },
         canOpenTelegram() {
+            // Legacy gate — unchanged. Used whenever subscriptionModelActive
+            // isn't explicitly true, which is also what every other current
+            // caller of this component (bulk print manifest, MyBusTicketsView,
+            // TicketPreviewView) gets by simply not sending the new field at
+            // all — they keep exactly this behavior, byte for byte.
             return Boolean(
                 this.ticket?.bookingId &&
                 this.ticket?.verificationToken &&
                 this.ticket?.status === 'confirmed' &&
                 this.ticket?.isManual &&
+                !this.ticket?.isClaimed &&
+                this.ticket?.claimStatus !== 'claimed'
+            );
+        },
+        // Manual Booking Telegram Subscription Model (additive, flag-gated
+        // server-side). Deliberately independent of the legacy ticket.isManual
+        // field — driven only by the server-decided subscriptionModelActive,
+        // so this gate can never be fooled by isManual's own history (it used
+        // to be computed from the unreliable channel/source_type heuristic;
+        // see routes/busAdmin.js's /bookings/:bookingId/ticket comment).
+        canUseSubscriptionModel() {
+            return Boolean(
+                this.ticket?.subscriptionModelActive &&
+                this.ticket?.bookingId &&
+                this.ticket?.verificationToken &&
+                this.ticket?.status === 'confirmed' &&
                 !this.ticket?.isClaimed &&
                 this.ticket?.claimStatus !== 'claimed'
             );
@@ -144,6 +167,55 @@ export default {
             } finally {
                 this.openingTelegram = false;
             }
+        },
+        // Manual Booking Telegram Subscription Model path — entirely
+        // separate from openTicketInTelegram()/telegramError/openingTelegram
+        // above: only ever reached when canUseSubscriptionModel is true
+        // (subscriptionModelActive true), and only ever calls
+        // /claims/start-subscription, never /claims/start-session. An
+        // ambiguous or network error here must never fall back to the
+        // legacy flow — it only ever sets subscribeError.
+        async onSubscribeClick() {
+            if (!this.canUseSubscriptionModel || !this.ticket?.canSubscribe) return;
+            // Blocks a rapid repeat click from starting a second
+            // subscription session while the first request is in flight.
+            if (this.subscribing) return;
+
+            this.subscribing = true;
+            this.subscribeError = '';
+
+            // Same pre-opened-window pattern as TicketVerificationView.vue's
+            // onSubscribeClick / BusAdminView.vue's openHandoffTelegram: a
+            // blank tab is opened synchronously, inside this click's user
+            // gesture, then navigated to the Telegram deep link once the
+            // async request resolves.
+            let newWindow = null;
+            try {
+                newWindow = window.open('about:blank', '_blank');
+            } catch (wErr) {
+                newWindow = null;
+            }
+
+            try {
+                const response = await api.post('/claims/start-subscription', {
+                    verificationToken: this.ticket.verificationToken,
+                    bookingId: this.ticket.bookingId
+                });
+                const deepLink = response.data?.deepLink;
+                if (!deepLink || typeof deepLink !== 'string' || !deepLink.startsWith('https://t.me/')) {
+                    throw new Error('Сервис не вернул безопасную ссылку Telegram');
+                }
+                if (newWindow && !newWindow.closed) {
+                    newWindow.location.href = deepLink;
+                } else {
+                    window.open(deepLink, '_blank');
+                }
+            } catch (err) {
+                if (newWindow && !newWindow.closed) newWindow.close();
+                this.subscribeError = 'Не удалось подготовить Telegram. Попробуйте ещё раз.';
+            } finally {
+                this.subscribing = false;
+            }
         }
     }
 };
@@ -171,30 +243,73 @@ export default {
                     </a>
                 </div>
                 <!-- Unclaimed Ticket Action -->
-                <div v-if="canOpenTelegram" class="flex flex-col items-end gap-1">
-                    <a
-                        v-if="telegramDeepLink"
-                        :href="telegramDeepLink"
-                        class="px-4 py-1.5 bg-sky-500 hover:bg-sky-400 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
-                    >
-                        <span>✈️</span>
-                        <span>Открыть Telegram</span>
-                    </a>
-                    <button
-                        v-else
-                        @click="openTicketInTelegram"
-                        :disabled="openingTelegram"
-                        class="px-4 py-1.5 bg-sky-500 hover:bg-sky-400 disabled:opacity-70 disabled:cursor-wait text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
-                    >
-                        <span>{{ openingTelegram ? '⏳' : '✈️' }}</span>
-                        <span>{{ openingTelegram ? 'Подготавливаем Telegram…' : 'Открыть билет в Telegram' }}</span>
-                    </button>
-                    <span v-if="telegramDeepLink" class="max-w-[260px] text-[10px] leading-tight text-sky-100 text-right">
-                        Ссылка готова. Нажмите ещё раз, чтобы открыть Telegram.
-                    </span>
-                    <span v-if="telegramError" class="max-w-[260px] text-[10px] leading-tight text-rose-200 text-right">
-                        {{ telegramError }}
-                    </span>
+                <div v-if="canUseSubscriptionModel || canOpenTelegram" class="flex flex-col items-end gap-1">
+
+                    <!-- Manual Booking Telegram Subscription Model path:
+                         gated purely on the server-decided
+                         subscriptionModelActive/canSubscribe, independent of
+                         the legacy ticket.isManual. -->
+                    <template v-if="ticket.subscriptionModelActive">
+                        <button
+                            v-if="ticket.canSubscribe"
+                            type="button"
+                            @click="onSubscribeClick"
+                            :disabled="subscribing"
+                            class="px-4 py-1.5 bg-sky-500 hover:bg-sky-400 disabled:opacity-70 disabled:cursor-wait text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
+                        >
+                            <span>{{ subscribing ? '⏳' : '✈️' }}</span>
+                            <span>{{ subscribing ? 'Открываем Telegram…' : 'Подключить уведомления в Telegram' }}</span>
+                        </button>
+                        <!-- Not currently subscribable (e.g. trip already
+                             arrived, or the check failed server-side) —
+                             never calls either endpoint, never falls back
+                             to legacy. -->
+                        <button
+                            v-else
+                            type="button"
+                            disabled
+                            class="px-4 py-1.5 bg-slate-500/60 cursor-not-allowed text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm"
+                        >
+                            <span>✈️</span>
+                            <span>Подключить уведомления в Telegram</span>
+                        </button>
+                        <span v-if="!ticket.canSubscribe" class="max-w-[260px] text-[10px] leading-tight text-sky-100 text-right">
+                            Подключение уведомлений для этой поездки сейчас недоступно
+                        </span>
+                        <span v-if="subscribeError" class="max-w-[260px] text-[10px] leading-tight text-rose-200 text-right">
+                            {{ subscribeError }}
+                        </span>
+                    </template>
+
+                    <!-- Legacy claim flow: unchanged text and behavior, used
+                         whenever subscriptionModelActive isn't explicitly
+                         true — including every other current caller of this
+                         component, which simply never sends that field. -->
+                    <template v-else>
+                        <a
+                            v-if="telegramDeepLink"
+                            :href="telegramDeepLink"
+                            class="px-4 py-1.5 bg-sky-500 hover:bg-sky-400 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
+                        >
+                            <span>✈️</span>
+                            <span>Открыть Telegram</span>
+                        </a>
+                        <button
+                            v-else
+                            @click="openTicketInTelegram"
+                            :disabled="openingTelegram"
+                            class="px-4 py-1.5 bg-sky-500 hover:bg-sky-400 disabled:opacity-70 disabled:cursor-wait text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
+                        >
+                            <span>{{ openingTelegram ? '⏳' : '✈️' }}</span>
+                            <span>{{ openingTelegram ? 'Подготавливаем Telegram…' : 'Открыть билет в Telegram' }}</span>
+                        </button>
+                        <span v-if="telegramDeepLink" class="max-w-[260px] text-[10px] leading-tight text-sky-100 text-right">
+                            Ссылка готова. Нажмите ещё раз, чтобы открыть Telegram.
+                        </span>
+                        <span v-if="telegramError" class="max-w-[260px] text-[10px] leading-tight text-rose-200 text-right">
+                            {{ telegramError }}
+                        </span>
+                    </template>
                 </div>
                 <button
                     @click="printTicket"
