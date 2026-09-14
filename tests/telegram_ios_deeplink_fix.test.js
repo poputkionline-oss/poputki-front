@@ -71,12 +71,20 @@ describe('PHASE E.4.1 — IOS TELEGRAM DEEP-LINK FIX', () => {
     });
 
     it('12. PassengerTicket.vue canOpenTelegram gate is unchanged (manual, confirmed, not claimed)', () => {
-        assert.match(passengerTicket, /canOpenTelegram\(\)\s*{\s*return Boolean\(\s*this\.ticket\?\.bookingId\s*&&\s*this\.ticket\?\.verificationToken\s*&&\s*this\.ticket\?\.status === 'confirmed'\s*&&\s*this\.ticket\?\.isManual\s*&&\s*!this\.ticket\?\.isClaimed\s*&&\s*this\.ticket\?\.claimStatus !== 'claimed'\s*\);/);
+        // [\s\S]*? tolerates an explanatory comment between the opening
+        // brace and `return Boolean(` (added when the subscription-model
+        // gate was introduced alongside this one) without weakening what
+        // the test actually verifies: the condition itself, unchanged.
+        assert.match(passengerTicket, /canOpenTelegram\(\)\s*{[\s\S]*?return Boolean\(\s*this\.ticket\?\.bookingId\s*&&\s*this\.ticket\?\.verificationToken\s*&&\s*this\.ticket\?\.status === 'confirmed'\s*&&\s*this\.ticket\?\.isManual\s*&&\s*!this\.ticket\?\.isClaimed\s*&&\s*this\.ticket\?\.claimStatus !== 'claimed'\s*\);/);
     });
 
     it('13. PassengerTicket.vue keeps the Telegram action inside the no-print screen action bar', () => {
         const barIndex = passengerTicket.indexOf('no-print flex items-center justify-between');
-        const ctaIndex = passengerTicket.indexOf('v-if="canOpenTelegram"');
+        // The subscription-model fix changed the outer v-if to
+        // "canUseSubscriptionModel || canOpenTelegram" — search for that
+        // exact template attribute (not the bare method name, which also
+        // appears earlier in <script>'s own computed definition).
+        const ctaIndex = passengerTicket.indexOf('v-if="canUseSubscriptionModel || canOpenTelegram"');
         const printMediaIndex = passengerTicket.indexOf('@media print');
         assert.ok(barIndex !== -1, 'no-print action bar must still exist');
         assert.ok(ctaIndex > barIndex, 'Telegram CTA must remain inside the no-print action bar');
