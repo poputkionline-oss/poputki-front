@@ -91,6 +91,62 @@ export function computeChangedPriceFields(editingTicket, updateData, priceFields
     return priceFields.filter(field => normalizePriceValue(editingTicket[field]) !== normalizePriceValue(updateData[field]));
 }
 
+// Bugfix P.2.2 — an id (e.g. bus_id) can round-trip as a string ("1", from a
+// BIGINT/BIGSERIAL column serialized by PostgREST) on one side of a diff and
+// a number (1, e.g. from a fleet-bus object's own id field) on the other.
+// Compare by string value so "1" and 1 are never mistaken for a change;
+// null/undefined/'' all mean "no id assigned" and compare equal to each other.
+export function normalizeId(val) {
+    if (val === null || val === undefined || val === '') return null;
+    return String(val).trim();
+}
+
+// Optional free-text fields (group leader name/phone/whatsapp, ...) can be
+// null (never set in the DB) on the original ticket but get coerced to ''
+// by updateData's `f.group_leader_name || ''`-style fallbacks when building
+// the PUT payload. Treat null/undefined/''/whitespace-only as the same
+// "empty" value so opening and re-saving a trip with no group leader never
+// manufactures a false "changed" entry.
+export function normalizeNullableText(val) {
+    if (val === null || val === undefined) return null;
+    const s = String(val).trim();
+    return s === '' ? null : s;
+}
+
+// Real, exported diff engine for the SUBSTANTIAL_FIELDS confirmation list —
+// used by updateBusTicket() below (not a parallel reimplementation). Applies
+// the id/nullable-text normalizers above only to the fields where a false
+// positive is actually possible; every other field keeps the original
+// JSON.stringify comparison (dates, addresses, intermediate_stops, ...),
+// unchanged from before this phase.
+const ID_FIELDS = ['bus_id'];
+const NULLABLE_TEXT_FIELDS = ['group_leader_name', 'group_leader_phone', 'group_leader_whatsapp'];
+
+export function computeChangedSubstantialFields(editingTicket, updateData, fields, fieldLabels = {}) {
+    if (!editingTicket) return { changed: [], oldValues: {}, newValues: {} };
+    const changed = [];
+    const oldValues = {};
+    const newValues = {};
+    for (const field of fields) {
+        const oldVal = editingTicket[field];
+        const newVal = updateData[field];
+        let isDifferent;
+        if (ID_FIELDS.includes(field)) {
+            isDifferent = normalizeId(oldVal) !== normalizeId(newVal);
+        } else if (NULLABLE_TEXT_FIELDS.includes(field)) {
+            isDifferent = normalizeNullableText(oldVal) !== normalizeNullableText(newVal);
+        } else {
+            isDifferent = JSON.stringify(oldVal) !== JSON.stringify(newVal);
+        }
+        if (isDifferent) {
+            changed.push({ field, label: fieldLabels[field] || field, oldVal: oldVal ?? '—', newVal: newVal ?? '—' });
+            oldValues[field] = oldVal;
+            newValues[field] = newVal;
+        }
+    }
+    return { changed, oldValues, newValues };
+}
+
 // The single decision point for what updateBusTicket() must do before any
 // API mutation: show one of the two confirmation modals, or proceed. Price
 // and substantial-field confirmations are mutually exclusive per call — if
@@ -399,6 +455,15 @@ export default {
                 } else {
                     this.fleetLoadState = 'loaded_success';
                 }
+                // Bugfix P.2.2: editTicket() sets selectedFleetBusId synchronously,
+                // before this fetch resolves. Re-apply it now that fleet master
+                // data has actually arrived, so the previously assigned bus's
+                // snapshot (bus_type/seats/photos) and busForm.bus_id are
+                // (re-)populated correctly instead of staying whatever the
+                // premature watcher fire left them at.
+                if (this.selectedFleetBusId) {
+                    this.applySelectedFleetBusToForm();
+                }
             } catch (e) {
                 console.error('[BusAdminView] Error loading fleet buses:', e);
                 this.fleetLoadState = 'load_error';
@@ -406,6 +471,20 @@ export default {
             } finally {
                 this.fleetLoading = false;
             }
+        },
+        // Bugfix P.2.2: shared by the selectedFleetBusId watcher and
+        // fetchFleetBuses() — applies the currently selected fleet bus's
+        // snapshot onto busForm. Returns true if a bus was found and applied.
+        applySelectedFleetBusToForm() {
+            const bus = this.selectedFleetBus;
+            if (!bus) return false;
+            this.busForm.bus_id = bus.id;
+            this.busForm.bus_type = bus.bus_type || 'single';
+            this.busForm.total_seats = bus.total_seats || 53;
+            this.busForm.floor1_seats = bus.floor1_seats || 20;
+            this.busForm.floor2_seats = bus.floor2_seats || 56;
+            this.busForm.photos = Array.isArray(bus.photos) ? JSON.parse(JSON.stringify(bus.photos)) : [];
+            return true;
         },
         async fetchStats() {
             this.loading = true;
@@ -810,26 +889,14 @@ export default {
                 group_leader_phone: 'Телефон старшего'
             };
 
-            const changedSubstantialFields = [];
-            const oldVals = {};
-            const newVals = {};
-
-            if (editingTicket) {
-                for (const field of SUBSTANTIAL_FIELDS) {
-                    const oldVal = editingTicket[field];
-                    const newVal = updateData[field];
-                    if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
-                        changedSubstantialFields.push({
-                            field,
-                            label: FIELD_LABELS[field] || field,
-                            oldVal: oldVal ?? '—',
-                            newVal: newVal ?? '—'
-                        });
-                        oldVals[field] = oldVal;
-                        newVals[field] = newVal;
-                    }
-                }
-            }
+            // Bugfix P.2.2: real, exported, unit-tested diff engine — normalizes
+            // bus_id (string/number id round-trip) and nullable optional text
+            // (null vs '' for an unset group leader) so opening and re-saving
+            // an untouched trip never manufactures a false "changed" entry.
+            const substantialDiff = computeChangedSubstantialFields(editingTicket, updateData, SUBSTANTIAL_FIELDS, FIELD_LABELS);
+            const changedSubstantialFields = substantialDiff.changed;
+            const oldVals = substantialDiff.oldValues;
+            const newVals = substantialDiff.newValues;
 
             // Phase P.2: Dynamic Trip Price — price is intentionally NOT part of
             // SUBSTANTIAL_FIELDS (a price change never blocks saving, even with
@@ -2119,7 +2186,13 @@ export default {
         },
         selectedFleetBus() {
             if (!this.selectedFleetBusId) return null;
-            return this.activeFleetBuses.find(b => b.id === Number(this.selectedFleetBusId)) || null;
+            // Bugfix P.2.2: a fleet bus id can round-trip as a string (a
+            // BIGINT/BIGSERIAL column serialized by PostgREST); the old
+            // `b.id === Number(...)` strict comparison never matched a
+            // string b.id against the Number-cast target. normalizeId
+            // compares both sides as strings, so "1"/1 always match.
+            const targetId = normalizeId(this.selectedFleetBusId);
+            return this.activeFleetBuses.find(b => normalizeId(b.id) === targetId) || null;
         }
 
 
@@ -2246,15 +2319,16 @@ watch: {
             }
         },
         selectedFleetBusId(newId) {
-            const bus = this.selectedFleetBus;
-            if (bus) {
-                this.busForm.bus_id = bus.id;
-                this.busForm.bus_type = bus.bus_type || 'single';
-                this.busForm.total_seats = bus.total_seats || 53;
-                this.busForm.floor1_seats = bus.floor1_seats || 20;
-                this.busForm.floor2_seats = bus.floor2_seats || 56;
-                this.busForm.photos = Array.isArray(bus.photos) ? JSON.parse(JSON.stringify(bus.photos)) : [];
-            } else {
+            const applied = this.applySelectedFleetBusToForm();
+            // Bugfix P.2.2: editTicket() sets selectedFleetBusId synchronously
+            // from the trip's existing bus_id, before fetchFleetBuses() has
+            // resolved — at that instant activeFleetBuses is still empty, so
+            // `applied` is false even though the trip genuinely has a bus
+            // assigned. Only clear busForm.bus_id once fleet data has
+            // actually loaded and confirmed there really is no match (e.g.
+            // the carrier picked "no bus" or the fleet is genuinely empty);
+            // fetchFleetBuses() re-applies the pending selection once loaded.
+            if (!applied && this.fleetLoadState === 'loaded_success') {
                 this.busForm.bus_id = null;
             }
         },
