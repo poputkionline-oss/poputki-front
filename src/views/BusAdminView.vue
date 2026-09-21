@@ -48,6 +48,72 @@ ChartJS.register(
   BarElement
 );
 
+// ---------------------------------------------------------------------------
+// Phase P.2.1 bugfix — pure, exported helpers for the Edit Trip price-change
+// confirmation flow, extracted out of updateBusTicket() so they can be
+// unit-tested directly (no Vue mount required) instead of only pinned via
+// source-text assertions. Used by updateBusTicket() below — not a parallel
+// reimplementation.
+//
+// Root cause of the production bug: activeBookingsCount previously came ONLY
+// from (ticket.reserved_seats || []).length, a seat-array proxy. A confirmed
+// booking is not required to have seat_numbers assigned (POST
+// /bus-admin/bookings/manual never validates seat_numbers as required), so a
+// real active booking with no seats yet contributed zero entries to
+// reserved_seats — silently undercounting bookings and suppressing both the
+// pre-existing trip-change modal and the new price-change warning. The
+// backend now exposes active_bookings_count directly (GET /bus-admin/tickets,
+// computed the same status-based way PUT /tickets/:id already defines "active
+// booking" for its own guard) — computeActiveBookingsCount prefers it, with
+// the old seat-count kept only as a defensive fallback.
+// ---------------------------------------------------------------------------
+
+export function computeActiveBookingsCount(ticket) {
+    if (!ticket) return 0;
+    if (ticket.active_bookings_count !== undefined && ticket.active_bookings_count !== null) {
+        return Number(ticket.active_bookings_count) || 0;
+    }
+    return (ticket.reserved_seats || []).length;
+}
+
+// Postgres NUMERIC columns can round-trip through the API as strings (e.g.
+// "840.00"), and <input type="number"> without the .number v-model modifier
+// keeps user-typed values as strings too. Compare by numeric value so 840 vs
+// "840.00" is never mistaken for a real price change.
+export function normalizePriceValue(val) {
+    if (val === null || val === undefined || val === '') return null;
+    const n = Number(val);
+    return Number.isFinite(n) ? n : val;
+}
+
+export function computeChangedPriceFields(editingTicket, updateData, priceFields = ['price', 'premium_price']) {
+    if (!editingTicket) return [];
+    return priceFields.filter(field => normalizePriceValue(editingTicket[field]) !== normalizePriceValue(updateData[field]));
+}
+
+// The single decision point for what updateBusTicket() must do before any
+// API mutation: show one of the two confirmation modals, or proceed. Price
+// and substantial-field confirmations are mutually exclusive per call — if
+// a substantial field changed, that modal takes priority and price changes
+// (if any) ride along inside it via payload.changes on the backend side,
+// exactly as before this phase; the price-only modal only ever appears when
+// no substantial field changed.
+export function decideTripEditConfirmation({
+    activeBookingsCount,
+    changedSubstantialFieldsCount,
+    changedPriceFieldsCount,
+    bypassBookingConfirmation,
+    bypassPriceConfirmation
+}) {
+    if (activeBookingsCount > 0 && changedSubstantialFieldsCount > 0 && !bypassBookingConfirmation) {
+        return 'show_substantial_modal';
+    }
+    if (activeBookingsCount > 0 && changedPriceFieldsCount > 0 && !bypassPriceConfirmation) {
+        return 'show_price_modal';
+    }
+    return 'proceed';
+}
+
 export default {
     components: {
         AppLogo,
@@ -717,9 +783,11 @@ export default {
                 updateData.seat_remap = seatRemapPayload;
             }
 
-            // Detect active bookings on this ticket
-            const activeBookingsCount = (editingTicket?.reserved_seats || []).length;
-            
+            // Detect active bookings on this ticket. Phase P.2.1: prefers the
+            // backend's direct active_bookings_count (status-based), falling
+            // back to the seat-count proxy only if that field is absent.
+            const activeBookingsCount = computeActiveBookingsCount(editingTicket);
+
             // Check substantial changes
             const SUBSTANTIAL_FIELDS = [
                 'departure_date', 'departure_time', 'arrival_date', 'arrival_time',
@@ -763,8 +831,27 @@ export default {
                 }
             }
 
-            // Section 6: If active bookings exist and substantial changes made -> Show Confirmation Modal before sending PUT
-            if (activeBookingsCount > 0 && changedSubstantialFields.length > 0 && !bypassBookingConfirmation) {
+            // Phase P.2: Dynamic Trip Price — price is intentionally NOT part of
+            // SUBSTANTIAL_FIELDS (a price change never blocks saving, even with
+            // active bookings: each existing booking keeps its own price
+            // snapshot). This is a separate, additive warning shown to the
+            // carrier only, so they understand existing bookings are unaffected.
+            // Phase P.2.1: normalized comparison (840 vs "840.00" is not a change).
+            const changedPriceFields = computeChangedPriceFields(editingTicket, updateData);
+
+            // Section 6 / Phase P.2.1: single decision point — at most one
+            // modal per call, price-only never fires alongside a substantial
+            // change (that case is handled entirely by the substantial modal,
+            // same as before this phase).
+            const confirmationDecision = decideTripEditConfirmation({
+                activeBookingsCount,
+                changedSubstantialFieldsCount: changedSubstantialFields.length,
+                changedPriceFieldsCount: changedPriceFields.length,
+                bypassBookingConfirmation,
+                bypassPriceConfirmation
+            });
+
+            if (confirmationDecision === 'show_substantial_modal') {
                 this.tripChangeConfirmData = {
                     ticket: editingTicket,
                     activeBookingsCount,
@@ -777,17 +864,7 @@ export default {
                 return;
             }
 
-            // Phase P.2: Dynamic Trip Price — price is intentionally NOT part of
-            // SUBSTANTIAL_FIELDS (a price change never blocks saving, even with
-            // active bookings: each existing booking keeps its own price
-            // snapshot). This is a separate, additive warning shown to the
-            // carrier only, so they understand existing bookings are unaffected.
-            const PRICE_FIELDS = ['price', 'premium_price'];
-            const changedPriceFields = editingTicket
-                ? PRICE_FIELDS.filter(field => JSON.stringify(editingTicket[field] ?? null) !== JSON.stringify(updateData[field] ?? null))
-                : [];
-
-            if (activeBookingsCount > 0 && changedPriceFields.length > 0 && !bypassPriceConfirmation) {
+            if (confirmationDecision === 'show_price_modal') {
                 this.priceChangeConfirmData = {
                     ticket: editingTicket,
                     activeBookingsCount,
