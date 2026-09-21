@@ -1013,7 +1013,12 @@ export default {
                     alert('Нельзя отвязать автобус от рейса. Вы можете выбрать другой автобус из своего автопарка.');
                 } else {
                     console.error('Update error:', e.response?.data || e);
-                    alert('Ошибка при обновлении: ' + (e.response?.data?.message || e.response?.data?.error || e.message));
+                    const correlationId = e.response?.data?.correlation_id;
+                    const baseMessage = e.response?.data?.message || e.response?.data?.error || e.message;
+                    // Bugfix P.2.5: an unexpected server-side failure now carries a
+                    // correlation_id the carrier can report — show it appended to the
+                    // existing message without changing any other branch above.
+                    alert('Ошибка при обновлении: ' + baseMessage + (correlationId ? `\nКод ошибки: ${correlationId}` : ''));
                 }
             } finally {
                 this.loading = false;
