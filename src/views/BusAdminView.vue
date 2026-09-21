@@ -189,6 +189,18 @@ export default {
                 oldValues: {},
                 newValues: {}
             },
+            // Phase P.2: Dynamic Trip Price — price-only change confirmation.
+            // Existing bookings keep their own price snapshot; this warns the
+            // carrier before saving, it never blocks the save.
+            showPriceChangeConfirmModal: false,
+            priceChangeConfirmData: {
+                ticket: null,
+                activeBookingsCount: 0,
+                oldPrice: null,
+                newPrice: null,
+                oldPremiumPrice: null,
+                newPremiumPrice: null
+            },
             showSeatRemapModal: false,
             seatRemapData: {
                 ticket: null,
@@ -642,7 +654,7 @@ export default {
             if (role !== 'owner' && role !== 'dispatcher') return false;
             return true;
         },
-        async updateBusTicket(allowConflict = false, bypassBookingConfirmation = false, seatRemapPayload = null) {
+        async updateBusTicket(allowConflict = false, bypassBookingConfirmation = false, seatRemapPayload = null, bypassPriceConfirmation = false) {
             if (this.fleetLoadState === 'loading') {
                 alert('Пожалуйста, дождитесь загрузки автопарка перед сохранением.');
                 return;
@@ -765,6 +777,31 @@ export default {
                 return;
             }
 
+            // Phase P.2: Dynamic Trip Price — price is intentionally NOT part of
+            // SUBSTANTIAL_FIELDS (a price change never blocks saving, even with
+            // active bookings: each existing booking keeps its own price
+            // snapshot). This is a separate, additive warning shown to the
+            // carrier only, so they understand existing bookings are unaffected.
+            const PRICE_FIELDS = ['price', 'premium_price'];
+            const changedPriceFields = editingTicket
+                ? PRICE_FIELDS.filter(field => JSON.stringify(editingTicket[field] ?? null) !== JSON.stringify(updateData[field] ?? null))
+                : [];
+
+            if (activeBookingsCount > 0 && changedPriceFields.length > 0 && !bypassPriceConfirmation) {
+                this.priceChangeConfirmData = {
+                    ticket: editingTicket,
+                    activeBookingsCount,
+                    oldPrice: editingTicket.price ?? null,
+                    newPrice: updateData.price ?? null,
+                    oldPremiumPrice: editingTicket.premium_price ?? null,
+                    newPremiumPrice: updateData.premium_price ?? null,
+                    priceChanged: changedPriceFields.includes('price'),
+                    premiumPriceChanged: changedPriceFields.includes('premium_price')
+                };
+                this.showPriceChangeConfirmModal = true;
+                return;
+            }
+
             this.loading = true;
             try {
                 // Ensure idempotency key is preserved across retries, conflicts, and seat remap
@@ -784,6 +821,7 @@ export default {
                 this.editSessionIdempotencyKey = null;
                 this.showScheduleConflictModal = false;
                 this.showTripChangeConfirmModal = false;
+                this.showPriceChangeConfirmModal = false;
                 this.showSeatRemapModal = false;
                 this.scheduleConflicts = [];
                 this.activeTab = 'tickets';
@@ -840,6 +878,10 @@ export default {
         confirmTripChangeModal() {
             this.showTripChangeConfirmModal = false;
             this.updateBusTicket(false, true);
+        },
+        confirmPriceChangeModal() {
+            this.showPriceChangeConfirmModal = false;
+            this.updateBusTicket(false, true, null, true);
         },
         submitSeatRemap() {
             const remap = this.seatRemapData;
@@ -3250,6 +3292,56 @@ watch: {
                     <button @click="confirmTripChangeModal" :disabled="loading" class="flex-1 py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1">
                         <span v-if="loading" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
                         <span>Сохранить и уведомить пассажиров</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phase P.2: Price Change Confirmation Modal — price-only edits are
+             never blocked by active bookings; this just informs the carrier
+             that existing bookings keep their original price. -->
+        <div v-if="showPriceChangeConfirmModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+            <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+                <div class="flex items-center space-x-3">
+                    <div class="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center text-2xl font-bold flex-shrink-0">
+                        💰
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-black text-slate-900">Изменение цены рейса</h3>
+                        <p class="text-xs text-slate-500">Активных броней: {{ priceChangeConfirmData?.activeBookingsCount || 0 }}</p>
+                    </div>
+                </div>
+
+                <p class="text-xs text-slate-600 leading-relaxed bg-amber-50/80 border border-amber-200/60 rounded-2xl p-3.5">
+                    Новая цена будет применяться только к новым бронированиям. Цена уже созданных броней не изменится.
+                </p>
+
+                <div class="space-y-2">
+                    <div v-if="priceChangeConfirmData?.priceChanged" class="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs">
+                        <div class="font-bold text-slate-800 mb-1">Цена билета</div>
+                        <div class="flex items-center justify-between text-[11px] text-slate-500 gap-2">
+                            <span class="line-through text-rose-500">{{ priceChangeConfirmData?.oldPrice }} сомони</span>
+                            <span class="text-slate-400">→</span>
+                            <span class="font-semibold text-emerald-600">{{ priceChangeConfirmData?.newPrice }} сомони</span>
+                        </div>
+                    </div>
+                    <div v-if="priceChangeConfirmData?.premiumPriceChanged" class="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs">
+                        <div class="font-bold text-slate-800 mb-1">Цена премиум-места</div>
+                        <div class="flex items-center justify-between text-[11px] text-slate-500 gap-2">
+                            <span class="line-through text-rose-500">{{ priceChangeConfirmData?.oldPremiumPrice ?? '—' }} сомони</span>
+                            <span class="text-slate-400">→</span>
+                            <span class="font-semibold text-emerald-600">{{ priceChangeConfirmData?.newPremiumPrice ?? '—' }} сомони</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 pt-2">
+                    <button @click="showPriceChangeConfirmModal = false" :disabled="loading" class="flex-1 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer disabled:opacity-50">
+                        Отмена
+                    </button>
+                    <button @click="confirmPriceChangeModal" :disabled="loading" class="flex-1 py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1">
+                        <span v-if="loading" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                        <span>Изменить цену</span>
                     </button>
                 </div>
             </div>
