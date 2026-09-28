@@ -2,6 +2,7 @@
 import api from '../api';
 import BusSeatSelector from '../components/BusSeatSelector.vue';
 import AppModal from '../components/AppModal.vue';
+import PassportScannerModal from '../components/PassportScannerModal.vue';
 import { compressImage } from '../utils/imageCompression';
 import acquisitionService from '../services/acquisitionService';
 
@@ -9,7 +10,7 @@ const STATE_KEY = (id) => `bus_booking_${id}`;
 
 export default {
     name: 'BusBookingView',
-    components: { BusSeatSelector, AppModal },
+    components: { BusSeatSelector, AppModal, PassportScannerModal },
     data() {
         return {
             ticket: null,
@@ -30,6 +31,8 @@ export default {
             pickupCity: '',
             dropOffCity: '',
             ocrLoadingIndex: -1,
+            showScannerModal: false,
+            activeScanIndex: 0,
 
             modal: { show: false, title: '', message: '', type: 'info', confirmText: 'ОК', showCancel: false, showBotLink: false, onConfirm: null }
         };
@@ -288,8 +291,30 @@ export default {
         },
 
         triggerScanner(index) {
-            this.ocrLoadingIndex = index;
-            this.$refs.passportInput.click();
+            this.activeScanIndex = index;
+            this.showScannerModal = true;
+        },
+
+        handleScannerConfirm({ passengerIndex, data }) {
+            const p = { ...this.passengersData[passengerIndex] };
+            if (data.lastName) p.lastName = data.lastName;
+            if (data.firstName) p.firstName = data.firstName;
+            if (data.middleName) p.middleName = data.middleName;
+            if (data.birthDate) p.birthDate = data.birthDate;
+            if (data.gender) p.gender = data.gender;
+            if (data.docNumber) p.docNumber = data.docNumber;
+            if (data.docType) p.docType = data.docType;
+            if (data.citizenship) {
+                if (this.countries.includes(data.citizenship)) {
+                    p.citizenship = data.citizenship;
+                } else {
+                    p.citizenship = 'Другое';
+                    p.customCitizenship = data.citizenship;
+                }
+            }
+            p.isExpanded = true;
+            this.passengersData.splice(passengerIndex, 1, p);
+            this.saveState();
         },
 
         async handlePassportUpload(event) {
@@ -942,6 +967,13 @@ export default {
             :type="modal.type" :confirmText="modal.confirmText" :showCancel="modal.showCancel"
             :showBotLink="modal.showBotLink"
             @confirm="modal.onConfirm" @cancel="modal.show = false" @close="modal.show = false"
+        />
+
+        <PassportScannerModal
+            :show="showScannerModal"
+            :passengerIndex="activeScanIndex"
+            @close="showScannerModal = false"
+            @confirm="handleScannerConfirm"
         />
     </div>
 </template>

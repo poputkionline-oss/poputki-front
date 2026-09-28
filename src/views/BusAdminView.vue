@@ -21,8 +21,8 @@ import CarrierCustomers from '../components/carrier/CarrierCustomers.vue';
 import CarrierActivity from '../components/carrier/CarrierActivity.vue';
 import CarrierDashboard from '../components/carrier/CarrierDashboard.vue';
 import CarrierFleet from '../components/carrier/CarrierFleet.vue';
+import PassportScannerModal from '../components/PassportScannerModal.vue';
 import {
-
   Chart as ChartJS,
   Title,
   Tooltip,
@@ -184,7 +184,8 @@ export default {
         CarrierCustomers,
         CarrierActivity,
         CarrierDashboard,
-        CarrierFleet
+        CarrierFleet,
+        PassportScannerModal
     },
 
     async mounted() {
@@ -222,6 +223,8 @@ export default {
             bookings: [],
             financeRefreshKey: 0,
             cities: [],
+            showScannerModal: false,
+            activeScanIndex: 0,
             busForm: {
                 transport_company: '',
                 from_city: '',
@@ -1244,8 +1247,20 @@ export default {
             this.bookingForm.passenger_count--;
         },
         triggerScanner(index) {
-            this.ocrLoadingIndex = index;
-            this.$refs.passportInput.click();
+            this.activeScanIndex = index;
+            this.showScannerModal = true;
+        },
+        handleScannerConfirm({ passengerIndex, data }) {
+            const p = { ...this.bookingForm.passengers_data[passengerIndex] };
+            if (data.lastName) p.lastName = data.lastName;
+            if (data.firstName) p.firstName = data.firstName;
+            if (data.middleName) p.middleName = data.middleName;
+            if (data.birthDate) p.birthDate = data.birthDate;
+            if (data.gender) p.gender = data.gender;
+            if (data.docNumber) p.docNumber = data.docNumber;
+            if (data.docType) p.docType = data.docType;
+            if (data.citizenship) p.citizenship = data.citizenship;
+            this.bookingForm.passengers_data.splice(passengerIndex, 1, p);
         },
         async handlePassportUpload(event) {
             const targetIndex = this.ocrLoadingIndex;
@@ -3737,5 +3752,12 @@ watch: {
                 </div>
             </div>
         </div>
+
+        <PassportScannerModal
+            :show="showScannerModal"
+            :passengerIndex="activeScanIndex"
+            @close="showScannerModal = false"
+            @confirm="handleScannerConfirm"
+        />
     </div>
 </template>
