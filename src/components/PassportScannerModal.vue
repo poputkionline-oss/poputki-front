@@ -109,7 +109,7 @@
         </div>
         <div>
           <h3 class="text-base font-bold text-slate-800">Идёт мультимодальное распознавание...</h3>
-          <p class="text-xs text-slate-500 mt-1">OpenAI Vision проверят текст, фасеты и контрольные суммы MRZ</p>
+          <p class="text-xs text-slate-500 mt-1">OpenAI Vision проверяет текст, фасеты и контрольные суммы MRZ</p>
         </div>
       </div>
 
@@ -164,9 +164,9 @@
         </div>
 
         <!-- Discrepancy / Warnings Box -->
-        <div v-if="conflicts.length > 0 || warnings.length > 0" class="p-3 bg-yellow-50 border border-yellow-200 rounded-xl space-y-1">
-          <div v-for="(c, i) in conflicts" :key="'c'+i" class="text-xs font-bold text-amber-800 flex items-center gap-1">
-            ⚠ {{ c }}
+        <div v-if="conflicts.length > 0 || warnings.length > 0" class="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1">
+          <div v-for="(c, i) in conflicts" :key="'c'+i" class="text-xs font-bold text-amber-800 flex items-start gap-1">
+            <span>⚠</span> <span>{{ c }}</span>
           </div>
           <div v-for="(w, i) in warnings" :key="'w'+i" class="text-xs text-amber-700">
             ℹ {{ w }}
@@ -300,18 +300,31 @@
 <script>
 import { compressImage } from '../utils/imageCompression';
 
-export const NATIONALITY_MAP = {
-  'TJK': 'Таджикистан', 'TAJIKISTAN': 'Таджикистан',
-  'RUS': 'Россия', 'RUSSIA': 'Россия',
-  'UZB': 'Узбекистан', 'UZBEKISTAN': 'Узбекистан',
-  'KAZ': 'Казахстан', 'KAZAKHSTAN': 'Казахстан',
-  'KGZ': 'Кыргызстан', 'KYRGYZSTAN': 'Кыргызстан',
-  'TKM': 'Туркменистан', 'TURKMENISTAN': 'Туркменистан',
-  'BLR': 'Беларусь', 'BELARUS': 'Беларусь',
-  'UKR': 'Украина', 'UKRAINE': 'Украина',
-  'ARM': 'Армения', 'ARMENIA': 'Армения',
-  'GEO': 'Грузия', 'GEORGIA': 'Грузия'
-};
+function normalizeDateForInput(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return '';
+  const trimmed = dateStr.trim();
+  if (!trimmed) return '';
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const dmy = trimmed.match(/^(\d{2})[.-/](\d{2})[.-/](\d{4})$/);
+  if (dmy) {
+    return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+  }
+
+  const iso = trimmed.match(/^(\d{4})[./](\d{2})[./](\d{2})$/);
+  if (iso) {
+    return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  }
+
+  if (/^\d{8}$/.test(trimmed)) {
+    return `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`;
+  }
+
+  return '';
+}
 
 export default {
   name: 'PassportScannerModal',
@@ -447,15 +460,20 @@ export default {
         this.formData.lastName = doc.surname || '';
         this.formData.firstName = doc.given_name || '';
         this.formData.middleName = doc.patronymic || '';
-        this.formData.birthDate = doc.birth_date || '';
+        this.formData.birthDate = normalizeDateForInput(doc.birth_date);
         this.formData.docNumber = doc.document_number || '';
         
-        if (doc.sex === 'M' || doc.sex === 'MALE') this.formData.gender = 'male';
-        else if (doc.sex === 'F' || doc.sex === 'FEMALE') this.formData.gender = 'female';
-        else this.formData.gender = '';
+        // Gender normalization
+        if (doc.sex === 'M' || doc.sex === 'MALE' || doc.sex === 'male' || doc.sex === 'М' || doc.sex === 'Мужской') {
+          this.formData.gender = 'male';
+        } else if (doc.sex === 'F' || doc.sex === 'FEMALE' || doc.sex === 'female' || doc.sex === 'Ж' || doc.sex === 'Женский') {
+          this.formData.gender = 'female';
+        } else {
+          this.formData.gender = '';
+        }
 
-        const rawNat = (doc.nationality || doc.country || '').toUpperCase();
-        const mappedCitizenship = NATIONALITY_MAP[rawNat] || doc.nationality || doc.country;
+        // Citizenship mapping
+        const mappedCitizenship = doc.nationality || doc.country || 'Таджикистан';
         if (mappedCitizenship) {
           if (this.countries.includes(mappedCitizenship)) {
             this.formData.citizenship = mappedCitizenship;
