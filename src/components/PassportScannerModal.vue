@@ -299,6 +299,7 @@
 
 <script>
 import { compressImage } from '../utils/imageCompression';
+import { normalizeCitizenship, CANONICAL_COUNTRIES } from '../utils/countryNormalizer';
 
 function normalizeDateForInput(dateStr) {
   if (!dateStr || typeof dateStr !== 'string') return '';
@@ -352,22 +353,10 @@ export default {
         gender: '',
         docNumber: '',
         docType: 'Загранпаспорт',
-        citizenship: 'Таджикистан',
+        citizenship: '',
         customCitizenship: ''
       },
-      countries: [
-        'Таджикистан',
-        'Россия',
-        'Узбекистан',
-        'Казахстан',
-        'Кыргызстан',
-        'Туркменистан',
-        'Беларусь',
-        'Украина',
-        'Армения',
-        'Грузия',
-        'Другое'
-      ]
+      countries: CANONICAL_COUNTRIES
     };
   },
   watch: {
@@ -395,7 +384,7 @@ export default {
         gender: '',
         docNumber: '',
         docType: 'Загранпаспорт',
-        citizenship: 'Таджикистан',
+        citizenship: '',
         customCitizenship: ''
       };
     },
@@ -413,9 +402,9 @@ export default {
         if (this.images.length >= 4) break;
         try {
           const compressedUri = await compressImage(file, {
-            maxWidth: 1200,
-            maxHeight: 1200,
-            quality: 0.6
+            maxWidth: 1920,
+            maxHeight: 1920,
+            quality: 0.88
           });
           this.images.push(compressedUri);
         } catch (e) {
@@ -472,16 +461,11 @@ export default {
           this.formData.gender = '';
         }
 
-        // Citizenship mapping
-        const mappedCitizenship = doc.nationality || doc.country || 'Таджикистан';
-        if (mappedCitizenship) {
-          if (this.countries.includes(mappedCitizenship)) {
-            this.formData.citizenship = mappedCitizenship;
-          } else {
-            this.formData.citizenship = 'Другое';
-            this.formData.customCitizenship = mappedCitizenship;
-          }
-        }
+        // Canonical Citizenship mapping
+        const rawCitizenship = doc.nationality || doc.country;
+        const normCitizenship = normalizeCitizenship(rawCitizenship);
+        this.formData.citizenship = normCitizenship.citizenship;
+        this.formData.customCitizenship = normCitizenship.customCitizenship;
 
         this.documentTypeDisplay = doc.document_type === 'id_card' ? 'ID-Карта' : 'Паспорт';
         this.formData.docType = doc.document_type === 'id_card' ? 'ID-карта' : 'Загранпаспорт';

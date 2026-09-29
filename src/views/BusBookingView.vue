@@ -4,6 +4,7 @@ import BusSeatSelector from '../components/BusSeatSelector.vue';
 import AppModal from '../components/AppModal.vue';
 import PassportScannerModal from '../components/PassportScannerModal.vue';
 import { compressImage } from '../utils/imageCompression';
+import { normalizeCitizenship, CANONICAL_COUNTRIES } from '../utils/countryNormalizer';
 import acquisitionService from '../services/acquisitionService';
 
 const STATE_KEY = (id) => `bus_booking_${id}`;
@@ -23,11 +24,7 @@ export default {
             selectedSeats: [],
             passengersData: [],
             phone: '',
-            countries: [
-                "Таджикистан", "Россия", "Узбекистан", "Казахстан", "Кыргызстан", 
-                "Туркменистан", "Беларусь", "Армения", "Азербайджан", "Грузия",
-                "Турция", "ОАЭ", "США", "Китай", "Германия", "Другое"
-            ],
+            countries: CANONICAL_COUNTRIES,
             pickupCity: '',
             dropOffCity: '',
             ocrLoadingIndex: -1,
@@ -304,13 +301,10 @@ export default {
             if (data.gender) p.gender = data.gender;
             if (data.docNumber) p.docNumber = data.docNumber;
             if (data.docType) p.docType = data.docType;
-            if (data.citizenship) {
-                if (this.countries.includes(data.citizenship)) {
-                    p.citizenship = data.citizenship;
-                } else {
-                    p.citizenship = 'Другое';
-                    p.customCitizenship = data.citizenship;
-                }
+            if (data.citizenship !== undefined) {
+                const norm = normalizeCitizenship(data.citizenship, data.customCitizenship);
+                p.citizenship = norm.citizenship;
+                p.customCitizenship = norm.customCitizenship;
             }
             p.isExpanded = true;
             this.passengersData.splice(passengerIndex, 1, p);
@@ -413,13 +407,9 @@ export default {
                 }
                 
                 if (citizenship) {
-                    // Check if citizenship exists in our predefined list, if not set to 'Другое'
-                    if (this.countries.includes(citizenship)) {
-                        p.citizenship = citizenship;
-                    } else {
-                        p.citizenship = 'Другое';
-                        p.customCitizenship = citizenship;
-                    }
+                    const norm = normalizeCitizenship(citizenship);
+                    p.citizenship = norm.citizenship;
+                    p.customCitizenship = norm.customCitizenship;
                 }
                 
                 p.docType = 'Загран паспорт';
