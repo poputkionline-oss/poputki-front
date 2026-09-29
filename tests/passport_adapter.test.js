@@ -155,4 +155,56 @@ describe('Passport Scanner -> Booking State Adapter Unit & Regression Tests', ()
         assert.equal(updated.citizenship, 'Россия');
         assert.equal(updated.docType, 'ID-карта');
     });
+
+    // 8. V6 Name Patronymic Separation
+    it('[ADAPTER-08] [V6-NAME] preserves surname, firstName, middleName distinctly without merging patronymic into firstName', () => {
+        const initialPassenger = { seat: 4 };
+        const scanResult = {
+            lastName: 'TESTOV',
+            firstName: 'DAVLAT',
+            middleName: 'RAHMONOVICH',
+            docNumber: 'A1234567',
+            citizenship: 'Таджикистан'
+        };
+
+        const updated = mapPassportScanToPassenger(scanResult, initialPassenger);
+        assert.equal(updated.lastName, 'TESTOV');
+        assert.equal(updated.firstName, 'DAVLAT');
+        assert.equal(updated.middleName, 'RAHMONOVICH');
+        assert.equal(updated.seat, 4);
+    });
+
+    // 9. V6 Compound First Name
+    it('[ADAPTER-09] [V6-NAME] preserves compound firstName "ANNA MARIA" with middleName empty', () => {
+        const initialPassenger = { seat: 1 };
+        const scanResult = {
+            lastName: 'IVANOVA',
+            firstName: 'ANNA MARIA',
+            middleName: '',
+            docNumber: '751234567',
+            citizenship: 'Россия'
+        };
+
+        const updated = mapPassportScanToPassenger(scanResult, initialPassenger);
+        assert.equal(updated.lastName, 'IVANOVA');
+        assert.equal(updated.firstName, 'ANNA MARIA');
+        assert.equal(updated.middleName, '');
+    });
+
+    // 10. V6 V5 Post-Confirm Regression & Seat Preservation
+    it('[ADAPTER-10] [V6-REGRESSION] preserves citizenship Россия, docType Загранпаспорт and seat', () => {
+        const initialPassenger = { seat: 7, citizenship: 'Таджикистан' };
+        const scanResult = {
+            lastName: 'PETROV',
+            firstName: 'PETER',
+            middleName: 'PETROVICH',
+            citizenship: 'Россия',
+            docType: 'passport'
+        };
+
+        const updated = mapPassportScanToPassenger(scanResult, initialPassenger);
+        assert.equal(updated.citizenship, 'Россия');
+        assert.equal(updated.docType, 'Загранпаспорт');
+        assert.equal(updated.seat, 7);
+    });
 });
