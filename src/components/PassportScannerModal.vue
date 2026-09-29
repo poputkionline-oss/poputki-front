@@ -164,11 +164,11 @@
         </div>
 
         <!-- Discrepancy / Warnings Box -->
-        <div v-if="conflicts.length > 0 || warnings.length > 0" class="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1">
+        <div v-if="conflicts.length > 0 || displayedWarnings.length > 0" class="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1">
           <div v-for="(c, i) in conflicts" :key="'c'+i" class="text-xs font-bold text-amber-800 flex items-start gap-1">
             <span>⚠</span> <span>{{ c }}</span>
           </div>
-          <div v-for="(w, i) in warnings" :key="'w'+i" class="text-xs text-amber-700">
+          <div v-for="(w, i) in displayedWarnings" :key="'w'+i" class="text-xs text-amber-700">
             ℹ {{ w }}
           </div>
         </div>
@@ -358,6 +358,14 @@ export default {
       },
       countries: CANONICAL_COUNTRIES
     };
+  },
+  computed: {
+    displayedWarnings() {
+      if (this.conflicts && this.conflicts.length > 0) {
+        return (this.warnings || []).filter(w => !w.includes('машиночитаемой') && !w.includes('MRZ'));
+      }
+      return this.warnings || [];
+    }
   },
   watch: {
     show(val) {
