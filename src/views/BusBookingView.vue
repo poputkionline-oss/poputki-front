@@ -5,6 +5,7 @@ import AppModal from '../components/AppModal.vue';
 import PassportScannerModal from '../components/PassportScannerModal.vue';
 import { compressImage } from '../utils/imageCompression';
 import { normalizeCitizenship, CANONICAL_COUNTRIES } from '../utils/countryNormalizer';
+import { mapPassportScanToPassenger, normalizeBookingDocumentType } from '../utils/passportAdapter';
 import acquisitionService from '../services/acquisitionService';
 
 const STATE_KEY = (id) => `bus_booking_${id}`;
@@ -190,9 +191,9 @@ export default {
                 firstName: '',
                 middleName: '',
                 birthDate: '',
-                citizenship: 'Таджикистан',
+                citizenship: '',
                 customCitizenship: '',
-                docType: 'Загран паспорт',
+                docType: 'Загранпаспорт',
                 docNumber: '',
             }));
         },
@@ -293,21 +294,9 @@ export default {
         },
 
         handleScannerConfirm({ passengerIndex, data }) {
-            const p = { ...this.passengersData[passengerIndex] };
-            if (data.lastName) p.lastName = data.lastName;
-            if (data.firstName) p.firstName = data.firstName;
-            if (data.middleName) p.middleName = data.middleName;
-            if (data.birthDate) p.birthDate = data.birthDate;
-            if (data.gender) p.gender = data.gender;
-            if (data.docNumber) p.docNumber = data.docNumber;
-            if (data.docType) p.docType = data.docType;
-            if (data.citizenship !== undefined) {
-                const norm = normalizeCitizenship(data.citizenship, data.customCitizenship);
-                p.citizenship = norm.citizenship;
-                p.customCitizenship = norm.customCitizenship;
-            }
-            p.isExpanded = true;
-            this.passengersData.splice(passengerIndex, 1, p);
+            const existing = this.passengersData[passengerIndex] || {};
+            const updated = mapPassportScanToPassenger(data, existing);
+            this.passengersData.splice(passengerIndex, 1, updated);
             this.saveState();
         },
 
@@ -714,6 +703,7 @@ export default {
                                         <select v-model="p.citizenship" @change="saveState"
                                             class="w-full px-4 py-3.5 bg-slate-50 border border-gray-200 rounded-xl text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all font-medium appearance-none cursor-pointer pr-10"
                                             :class="showValidationErrors && !p.citizenship ? 'border-red-400 bg-red-50' : 'border-gray-200'">
+                                            <option value="">-- Выберите гражданство --</option>
                                             <option v-for="c in countries" :key="c" :value="c">{{ c }}</option>
                                         </select>
                                         <svg class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
@@ -728,9 +718,11 @@ export default {
                                     <div class="relative">
                                         <select v-model="p.docType" @change="saveState"
                                             class="w-full px-4 py-3.5 bg-slate-50 border border-gray-200 rounded-xl text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all font-medium appearance-none cursor-pointer pr-10">
-                                            <option>Загран паспорт</option>
-                                            <option>Внутренний паспорт</option>
-                                            <option>Свидетельство о рождении</option>
+                                            <option value="Загранпаспорт">Загранпаспорт</option>
+                                            <option value="Внутренний паспорт">Внутренний паспорт</option>
+                                            <option value="ID-карта">ID-карта</option>
+                                            <option value="Свидетельство о рождении">Свидетельство о рождении</option>
+                                            <option value="Вид на жительство">Вид на жительство</option>
                                         </select>
                                         <svg class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                                     </div>

@@ -250,9 +250,10 @@
               class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             >
               <option value="Загранпаспорт">Загранпаспорт</option>
-              <option value="Паспорт">Внутренний паспорт</option>
+              <option value="Внутренний паспорт">Внутренний паспорт</option>
               <option value="ID-карта">ID-карта</option>
               <option value="Свидетельство о рождении">Свидетельство о рождении</option>
+              <option value="Вид на жительство">Вид на жительство</option>
             </select>
           </div>
 
@@ -263,6 +264,7 @@
               v-model="formData.citizenship" 
               class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             >
+              <option value="">-- Выберите гражданство --</option>
               <option v-for="c in countries" :key="c" :value="c">{{ c }}</option>
             </select>
           </div>
@@ -300,6 +302,7 @@
 <script>
 import { compressImage } from '../utils/imageCompression';
 import { normalizeCitizenship, CANONICAL_COUNTRIES } from '../utils/countryNormalizer';
+import { normalizeBookingDocumentType } from '../utils/passportAdapter';
 
 function normalizeDateForInput(dateStr) {
   if (!dateStr || typeof dateStr !== 'string') return '';
@@ -476,7 +479,7 @@ export default {
         this.formData.customCitizenship = normCitizenship.customCitizenship;
 
         this.documentTypeDisplay = doc.document_type === 'id_card' ? 'ID-Карта' : 'Паспорт';
-        this.formData.docType = doc.document_type === 'id_card' ? 'ID-карта' : 'Загранпаспорт';
+        this.formData.docType = normalizeBookingDocumentType(doc.document_type);
 
         if (this.quality && this.quality.acceptable === false) {
           this.step = 'quality_warning';

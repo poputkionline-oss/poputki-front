@@ -22,6 +22,7 @@ import CarrierActivity from '../components/carrier/CarrierActivity.vue';
 import CarrierDashboard from '../components/carrier/CarrierDashboard.vue';
 import CarrierFleet from '../components/carrier/CarrierFleet.vue';
 import PassportScannerModal from '../components/PassportScannerModal.vue';
+import { mapPassportScanToPassenger } from '../utils/passportAdapter';
 import {
   Chart as ChartJS,
   Title,
@@ -1251,16 +1252,9 @@ export default {
             this.showScannerModal = true;
         },
         handleScannerConfirm({ passengerIndex, data }) {
-            const p = { ...this.bookingForm.passengers_data[passengerIndex] };
-            if (data.lastName) p.lastName = data.lastName;
-            if (data.firstName) p.firstName = data.firstName;
-            if (data.middleName) p.middleName = data.middleName;
-            if (data.birthDate) p.birthDate = data.birthDate;
-            if (data.gender) p.gender = data.gender;
-            if (data.docNumber) p.docNumber = data.docNumber;
-            if (data.docType) p.docType = data.docType;
-            if (data.citizenship) p.citizenship = data.citizenship;
-            this.bookingForm.passengers_data.splice(passengerIndex, 1, p);
+            const existing = this.bookingForm.passengers_data[passengerIndex] || {};
+            const updated = mapPassportScanToPassenger(data, existing);
+            this.bookingForm.passengers_data.splice(passengerIndex, 1, updated);
         },
         async handlePassportUpload(event) {
             const targetIndex = this.ocrLoadingIndex;
