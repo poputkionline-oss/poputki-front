@@ -104,7 +104,6 @@ export default {
                 { id: 'users', label: 'Пользователи' },
                 { id: 'bus-drivers', label: 'Перевозчики' },
                 { id: 'rides', label: 'Попутки' },
-                { id: 'bus-tickets', label: 'Автобусы' },
                 { id: 'reviews', label: 'Отзывы' },
                 { id: 'passengers', label: 'Данные пассажиров' },
                 { id: 'cities', label: 'Города' },
