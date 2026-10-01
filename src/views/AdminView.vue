@@ -30,6 +30,17 @@ ChartJS.register(
   BarElement
 );
 
+// Display/export filtering only; booking and passenger records remain intact.
+function isVisiblePassengerRecord(passenger) {
+    if (!passenger || typeof passenger !== 'object') return false;
+    const names = [passenger.lastName, passenger.firstName, passenger.middleName]
+        .map(value => String(value ?? '').trim())
+        .filter(value => value && !/^(?:[-—–]+|null|undefined|n\/a)$/i.test(value));
+    if (!names.length) return false;
+    return !names.some(name => name.split(/[^\p{L}\p{N}]+/u)
+        .some(word => /^test\d*$/i.test(word)));
+}
+
 export default {
     components: {
         LineChart: Line,
@@ -580,7 +591,7 @@ export default {
             this.passengersLoading = true;
             try {
                 const res = await api.get('/admin/passengers-data');
-                this.passengersData = res.data;
+                this.passengersData = (Array.isArray(res.data) ? res.data : []).filter(isVisiblePassengerRecord);
             } catch (e) {
                 alert('Ошибка загрузки данных пассажиров: ' + (e.response?.data?.error || e.message));
             } finally {
