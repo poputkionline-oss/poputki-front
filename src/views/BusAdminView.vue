@@ -1168,6 +1168,10 @@ export default {
             };
         },
         initBooking(ticketId) {
+            if (!this.tickets.some(t => Number(t.id) === Number(ticketId) && t.status === 'active')) {
+                alert('Бронирование на завершённый или недоступный рейс невозможно');
+                return;
+            }
             this.bookingForm.bus_ticket_id = ticketId;
             this.bookingForm.pickup_city = '';
             this.bookingForm.drop_off_city = '';
@@ -1375,6 +1379,10 @@ export default {
             const f = this.bookingForm;
             if (!f.bus_ticket_id) {
                 alert('Выберите рейс');
+                return;
+            }
+            if (!this.currentBookingTicket || this.currentBookingTicket.status !== 'active') {
+                alert('Рейс больше недоступен для бронирования. Выберите другой рейс.');
                 return;
             }
             // Validate each passenger has a seat number and gender
@@ -1988,6 +1996,10 @@ export default {
         }
     },
     computed: {
+        manualBookingTickets() {
+            return this.tickets.filter(t => t.status === 'active' ||
+                (this.isEditingBooking && Number(t.id) === Number(this.bookingForm.bus_ticket_id)));
+        },
         passengerManifest() {
             if (!this.selectedBookingRideId) return [];
 
@@ -2710,10 +2722,11 @@ watch: {
                             <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Выберите рейс</label>
                             <select v-model="bookingForm.bus_ticket_id" class="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-slate-900 outline-none focus:border-amber-500 appearance-none cursor-pointer">
                                 <option value="" disabled>Рейс не выбран</option>
-                                <option v-for="t in tickets" :key="'book-t-'+t.id" :value="t.id">
+                                <option v-for="t in manualBookingTickets" :key="'book-t-'+t.id" :value="t.id" :disabled="t.status !== 'active'">
                                     {{ t.from_city }} -> {{ t.to_city }} ({{ t.departure_date }} {{ t.departure_time }})
                                 </option>
                             </select>
+                            <p v-if="!manualBookingTickets.length" class="text-sm text-slate-500">Нет доступных рейсов для бронирования</p>
                         </div>
 
                         <!-- Bus Seat Selector (shown after ride is selected) -->
