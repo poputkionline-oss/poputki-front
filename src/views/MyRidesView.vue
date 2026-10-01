@@ -16,6 +16,7 @@ export default {
             user: null,
             activeTab: 'active', // 'active' or 'past'
             rides: [],
+            ownReviews: [],
             loading: true,
             expandedRides: new Set(),
             showReviewModal: false,
@@ -57,12 +58,13 @@ export default {
         }
         this.user = JSON.parse(userStr);
         await this.fetchMyRides();
+        await this.fetchOwnReviews();
 
         // Handle direct review link from Telegram notification
         if (this.$route.query.reviewRideId) {
             const rideId = parseInt(this.$route.query.reviewRideId);
             const ride = this.rides.find(r => r.id === rideId);
-            if (ride) {
+            if (ride && ride.status === 'completed' && !this.hasReviewed(ride) && !this.isDriver(ride)) {
                 this.openReviewModal(ride);
                 // Clear the query parameter to avoid re-opening on refresh
                 this.$router.replace({ query: { ...this.$route.query, reviewRideId: undefined } });
@@ -219,10 +221,15 @@ export default {
             this.showReviewModal = true;
         },
         hasReviewed(ride) {
-            // Check if user has already reviewed (frontend check only, backend also validates)
-            // Implementation would depend on whether we fetch reviews here.
-            // For now, simpler to let them try and backend will block if duplicate.
-            return false;
+            return this.ownReviews.some(r => r.ride_id === ride.id);
+        },
+        async fetchOwnReviews() {
+            try { this.ownReviews = (await api.get('/reviews/mine')).data; }
+            catch { this.ownReviews = []; }
+        },
+        async reviewSubmitted() {
+            this.showReviewModal = false;
+            await this.fetchOwnReviews();
         },
         repeatRide(ride) {
             this.$router.push({
@@ -569,7 +576,7 @@ export default {
 
                             <!-- Review (Passenger) -->
                             <button 
-                                v-if="!isDriver(ride) && ride.status === 'completed'"
+                                v-if="!isDriver(ride) && ride.status === 'completed' && !hasReviewed(ride)"
                                 @click="openReviewModal(ride)"
                                 class="w-full bg-yellow-400 text-white font-bold py-3 rounded-2xl hover:bg-yellow-500 transition-colors shadow-lg shadow-yellow-500/20"
                             >
@@ -595,7 +602,7 @@ export default {
             :ride-id="selectedRideForReview?.id"
             :driver-id="selectedRideForReview?.driver_id"
             @close="showReviewModal = false"
-            @success="showReviewModal = false"
+            @success="reviewSubmitted"
         />
 
         <!-- Custom Modal -->

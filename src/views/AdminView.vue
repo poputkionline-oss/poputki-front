@@ -2626,6 +2626,7 @@ export default {
              <!-- Reviews Section -->
              <section v-if="activeTab === 'reviews'" class="space-y-6 lg:space-y-8">
                 <h2 class="text-2xl lg:text-3xl text-slate-900 font-bold">Управление отзывами</h2>
+                <p v-if="!reviews.length" class="text-sm text-slate-500">Пока нет отзывов.</p>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
                     <div v-for="review in reviews" :key="review.id" class="bg-white p-5 lg:p-6 rounded-2xl lg:rounded-[32px] border border-slate-100 relative group shadow-sm">
                         <button @click="deleteReview(review.id)" class="absolute top-4 right-4 lg:top-6 lg:right-6 p-2 rounded-xl bg-red-50 text-red-500 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white">
@@ -2639,13 +2640,15 @@ export default {
                             </div>
                             <div>
                                 <h4 class="font-bold text-slate-800">{{ review.reviewer_name }}</h4>
-                                <p class="text-sm text-slate-500">Для водителя <span class="text-slate-700 font-medium">{{ review.driver_name }}</span></p>
+                                <p class="text-sm text-slate-500">{{ review.review_type === 'bus' ? 'Перевозчик' : 'Водитель' }} <span class="text-slate-700 font-medium">{{ review.driver_name }}</span></p>
                             </div>
                         </div>
                         <div class="flex items-center space-x-1 text-amber-500 mb-3">
                             <span v-for="i in 5" :key="i" :class="i <= review.rating ? 'opacity-100' : 'opacity-20'">★</span>
                         </div>
-                        <p class="text-slate-600 italic">"{{ review.comment }}"</p>
+                        <p class="text-xs text-slate-500 mb-2">{{ review.review_type === 'bus' ? 'Автобусный рейс' : 'Попутка' }} · {{ new Date(review.created_at).toLocaleDateString('ru-RU') }}</p>
+                        <p v-if="review.bus_tickets" class="text-sm text-slate-600 mb-2">{{ review.bus_tickets.from_city }} → {{ review.bus_tickets.to_city }} · {{ review.bus_tickets.departure_date }}</p>
+                        <p class="text-slate-600 italic whitespace-pre-wrap break-words">"{{ review.comment }}"</p>
                     </div>
                 </div>
             </section>

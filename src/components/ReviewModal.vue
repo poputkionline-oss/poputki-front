@@ -36,7 +36,8 @@
         <div class="space-y-2">
           <label class="text-sm font-bold text-gray-400 uppercase tracking-wider">Комментарий</label>
           <textarea 
-            v-model="comment" 
+            v-model="comment"
+            maxlength="2000"
             placeholder="Расскажите как прошла поездка..."
             class="w-full h-32 p-4 bg-gray-50 rounded-2xl border border-gray-100 outline-none focus:ring-2 focus:ring-yellow-400/20 focus:border-yellow-400 transition-all resize-none text-slate-700"
           ></textarea>
@@ -79,6 +80,7 @@ export default {
   props: {
     show: Boolean,
     rideId: Number,
+    bookingId: Number,
     driverId: Number
   },
   data() {
@@ -105,10 +107,8 @@ export default {
     async submitReview() {
       this.loading = true;
       try {
-        await api.post('/reviews', {
-          ride_id: this.rideId,
-          reviewer_id: this.user.id,
-          driver_id: this.driverId,
+        await api.post(this.bookingId ? '/reviews/bus' : '/reviews', {
+          ...(this.bookingId ? { booking_id: this.bookingId } : { ride_id: this.rideId }),
           rating: this.rating,
           comment: this.comment
         });
@@ -118,7 +118,7 @@ export default {
         }, 1500);
       } catch (err) {
         console.error(err);
-        this.showAlert('Ошибка', err.response?.data?.error || 'Ошибка при отправке отзыва', 'error');
+        this.showAlert('Ошибка', err.response?.data?.message || err.response?.data?.error || 'Ошибка при отправке отзыва', 'error');
       } finally {
         this.loading = false;
       }

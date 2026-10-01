@@ -1,6 +1,7 @@
 <script>
 import api from '../api';
 import AppModal from '../components/AppModal.vue';
+import CarrierReviews from '../components/CarrierReviews.vue';
 import { openPhone, copyToClipboard } from '../telegram';
 import AppToast from '../components/AppToast.vue';
 import acquisitionService from '../services/acquisitionService';
@@ -9,6 +10,7 @@ export default {
     name: 'BusTicketDetailsView',
     components: { 
         AppModal,
+        CarrierReviews,
         AppToast 
     },
     data() {
@@ -439,6 +441,10 @@ export default {
             <!-- Safe area bottom spacer for mobile browsers -->
             <div class="h-10 shrink-0"></div>
         </div>
+        <div v-if="ticket?.operator_id" class="max-w-3xl mx-auto px-5 py-4">
+            <CarrierReviews :carrier-id="Number(ticket.operator_id)" />
+        </div>
+
         <AppToast :show="toast.show" :message="toast.message" :type="toast.type" />
     </div>
 </template>

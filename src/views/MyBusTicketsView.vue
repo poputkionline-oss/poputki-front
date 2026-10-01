@@ -3,17 +3,22 @@ import api from '../api';
 import { openPhone, copyToClipboard } from '../telegram';
 import AppToast from '../components/AppToast.vue';
 import PassengerTicket from '../components/ticket/PassengerTicket.vue';
+import ReviewModal from '../components/ReviewModal.vue';
 
 export default {
     name: 'MyBusTicketsView',
     components: {
         AppToast,
-        PassengerTicket
+        PassengerTicket,
+        ReviewModal
     },
     data() {
         return {
             user: JSON.parse(localStorage.getItem('user') || 'null'),
             bookings: [],
+            reviewEligibility: [],
+            reviewBookingId: null,
+            showReviewModal: false,
             loading: true,
             showSuccessBanner: false,
             phoneExpandedBookings: new Set(),
@@ -52,6 +57,25 @@ export default {
         }
     },
     methods: {
+        canReview(booking) {
+            return !booking.isFollowerView && this.reviewEligibility.some(r => r.booking_id === booking.id && r.can_review);
+        },
+        hasReviewed(booking) {
+            return this.reviewEligibility.some(r => r.booking_id === booking.id && r.review_id);
+        },
+        openReview(booking) {
+            if (!this.canReview(booking)) return;
+            this.reviewBookingId = booking.id;
+            this.showReviewModal = true;
+        },
+        async fetchReviewEligibility() {
+            try { this.reviewEligibility = (await api.get('/reviews/bus/eligible')).data; }
+            catch { this.reviewEligibility = []; }
+        },
+        async reviewSubmitted() {
+            this.showReviewModal = false;
+            await this.fetchReviewEligibility();
+        },
         async fetchBookings() {
             this.loading = true;
             try {
@@ -183,6 +207,14 @@ export default {
             this.$router.replace({ name: 'my-bus-tickets' });
         }
         await this.fetchBookings();
+        await this.fetchReviewEligibility();
+        const target = Number(this.$route.query.reviewBookingId);
+        if (target) {
+            const booking = this.bookings.find(b => b.id === target);
+            if (booking && this.canReview(booking)) this.openReview(booking);
+            else { this.toast.message = 'Отзыв недоступен или уже оставлен'; this.toast.type = 'info'; this.toast.show = true; }
+            this.$router.replace({ query: { ...this.$route.query, reviewBookingId: undefined } });
+        }
     }
 };
 </script>
@@ -374,6 +406,8 @@ export default {
 
                         <!-- Ticket Action Button -->
                         <div class="px-6 pb-6 bg-white">
+                            <button v-if="canReview(b)" @click="openReview(b)" class="w-full mb-3 text-sm font-bold text-amber-600">★ Оставить отзыв</button>
+                            <p v-else-if="hasReviewed(b)" class="mb-3 text-sm text-emerald-600">Отзыв оставлен</p>
                             <button
                                 @click="viewTicket(b)"
                                 class="w-full py-3 bg-slate-900 hover:bg-slate-800 text-amber-400 font-bold text-xs rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-98 shadow-md"
@@ -410,6 +444,8 @@ export default {
                         </div>
                         <div class="px-5 py-3 flex items-center justify-between text-sm">
                             <div class="text-gray-400">{{ formatDate(b.departure_date) }}</div>
+                            <button v-if="canReview(b)" @click="openReview(b)" class="text-xs font-bold text-amber-600">★ Оставить отзыв</button>
+                            <span v-else-if="hasReviewed(b)" class="text-xs text-emerald-600">Отзыв оставлен</span>
                             <button @click="viewTicket(b)" class="text-xs font-bold text-slate-700 hover:text-amber-600">
                                 🎫 Билет
                             </button>
@@ -418,6 +454,8 @@ export default {
                 </div>
             </div>
         </div>
+
+        <ReviewModal v-if="showReviewModal" :show="showReviewModal" :booking-id="reviewBookingId" @close="showReviewModal = false" @success="reviewSubmitted" />
 
         <!-- TICKET MODAL PREVIEW -->
         <div v-if="ticketModal.show" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm overflow-y-auto">
