@@ -19,6 +19,7 @@ import CarrierFinance from '../components/carrier/CarrierFinance.vue';
 import CarrierMembers from '../components/carrier/CarrierMembers.vue';
 import CarrierCustomers from '../components/carrier/CarrierCustomers.vue';
 import CarrierActivity from '../components/carrier/CarrierActivity.vue';
+import MyReviewsPanel from '../components/MyReviewsPanel.vue';
 import CarrierDashboard from '../components/carrier/CarrierDashboard.vue';
 import CarrierFleet from '../components/carrier/CarrierFleet.vue';
 import PassportScannerModal from '../components/PassportScannerModal.vue';
@@ -184,6 +185,7 @@ export default {
         CarrierMembers,
         CarrierCustomers,
         CarrierActivity,
+        MyReviewsPanel,
         CarrierDashboard,
         CarrierFleet,
         PassportScannerModal
@@ -266,6 +268,7 @@ export default {
                 { id: 'dashboard', label: 'Обзор' },
                 { id: 'boarding', label: 'Посадка' },
                 { id: 'tickets', label: 'Мои рейсы' },
+                { id: 'reviews', label: 'Мои отзывы' },
                 { id: 'fleet', label: 'Мой автопарк' },
                 { id: 'create', label: 'Создать рейс' },
                 { id: 'create-booking', label: 'Создать бронь' },
@@ -2198,10 +2201,10 @@ export default {
                     return isOwner;
                 }
                 if (role === 'driver') {
-                    return ['boarding', 'tickets'].includes(item.id);
+                    return ['boarding', 'tickets', 'reviews'].includes(item.id);
                 }
                 if (role === 'accountant') {
-                    return ['finance', 'fleet'].includes(item.id);
+                    return ['finance', 'fleet', 'reviews'].includes(item.id);
                 }
                 return true;
             });
@@ -2692,6 +2695,9 @@ watch: {
                 </section>
 
                 <!-- Activity History Section -->
+                <section v-if="activeTab === 'reviews'" class="space-y-6">
+                    <MyReviewsPanel received />
+                </section>
                 <section v-if="activeTab === 'activity'" class="space-y-6">
                     <CarrierActivity
                         :user="user"
