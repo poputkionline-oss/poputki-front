@@ -160,6 +160,11 @@ export default {
             pollAnswerPage: 1,
             pollAnswerCount: 0,
             pollDeliveryStatus: null,
+            pollRecipients: [],
+            pollRecipientPage: 1,
+            pollRecipientCount: 0,
+            pollRecipientsLoading: false,
+            pollRecipientsError: '',
             pollSettingsLoading: false,
             pollAnswersLoading: false,
             savingPollSettings: false,
@@ -636,8 +641,24 @@ export default {
         async fetchPollData() {
             this.fetchPollSettings();
             this.fetchPollAnswers(1);
+            this.fetchPollRecipients(1);
             try { this.pollDeliveryStatus = (await api.get('/admin/polls/status')).data; }
             catch { this.pollDeliveryStatus = null; }
+        },
+        async fetchPollRecipients(page = 1) {
+            this.pollRecipientsLoading = true;
+            this.pollRecipientsError = '';
+            try {
+                const { data } = await api.get('/admin/polls/recipients', { params: { page } });
+                this.pollRecipients = data.recipients;
+                this.pollRecipientCount = data.count;
+                this.pollRecipientPage = page;
+            } catch {
+                this.pollRecipientsError = 'Не удалось загрузить получателей. Нажмите «Обновить».';
+            } finally { this.pollRecipientsLoading = false; }
+        },
+        pollDeliveryLabel(status) {
+            return { sent: 'Отправлен', processing: 'Отправляется', failed: 'Ошибка', uncertain: 'Отправка не подтверждена', skipped: 'Пропущен' }[status] || status;
         },
         async fetchPollSettings() {
             this.pollSettingsLoading = true;
@@ -2666,6 +2687,39 @@ export default {
                     <div>
                         <h2 class="text-2xl lg:text-3xl text-slate-900 font-bold">Опросы и обратная связь</h2>
                         <p class="text-sm text-slate-500">Настройка вопросов для пользователей, прервавших покупку, и просмотр их ответов</p>
+                    </div>
+                    <button @click="fetchPollData" class="px-4 py-2 border rounded-xl bg-white">Обновить</button>
+                </div>
+
+                <div v-if="pollDeliveryStatus" class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="bg-white rounded-2xl border p-5"><p class="text-sm text-slate-500">Отправлено опросов — всего</p><p class="text-3xl font-bold mt-2">{{ pollDeliveryStatus.sent_total }}</p><p class="text-xs text-slate-400 mt-1">Включая старые отправки</p></div>
+                    <div class="bg-white rounded-2xl border p-5"><p class="text-sm text-slate-500">Получено ответов</p><p class="text-3xl font-bold mt-2">{{ pollDeliveryStatus.answered_total }}</p></div>
+                    <div class="bg-white rounded-2xl border p-5"><p class="text-sm text-slate-500">Ожидают ответа</p><p class="text-3xl font-bold mt-2">{{ pollDeliveryStatus.awaiting_total }}</p></div>
+                    <div class="bg-white rounded-2xl border p-5"><p class="text-sm text-slate-500">Ошибок / не подтверждено</p><p class="text-3xl font-bold mt-2">{{ pollDeliveryStatus.failed }} / {{ pollDeliveryStatus.uncertain }}</p></div>
+                </div>
+                <p v-else class="text-sm text-amber-700">Счётчики недоступны. Нажмите «Обновить».</p>
+
+                <div class="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm space-y-4">
+                    <h3 class="font-bold text-lg">Получатели опросов ({{ pollRecipientCount }})</h3>
+                    <p class="text-xs text-slate-500">Статус «Отправлен» означает подтверждение Telegram, а не прочтение. Старые опросы включены в список.</p>
+                    <p v-if="pollRecipientsError" class="text-sm text-red-600">{{ pollRecipientsError }}</p>
+                    <p v-else-if="pollRecipientsLoading" class="text-sm text-slate-500">Загрузка получателей…</p>
+                    <p v-else-if="!pollRecipients.length" class="text-sm text-slate-500">Отправок пока нет.</p>
+                    <div v-else class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-slate-500 border-b"><tr><th class="p-3">Получатель</th><th class="p-3">Бронь / дата</th><th class="p-3">Отправка</th><th class="p-3">Ответ</th></tr></thead>
+                            <tbody><tr v-for="recipient in pollRecipients" :key="recipient.id" class="border-b last:border-0 align-top">
+                                <td class="p-3"><p class="font-semibold">{{ recipient.name || 'Пользователь #' + recipient.user_id }}</p><p class="text-xs text-slate-500">{{ recipient.phone || 'Телефон не указан' }}</p><p class="text-xs text-slate-500">TG: {{ recipient.telegram_id }}</p></td>
+                                <td class="p-3">#{{ recipient.booking_id }}<p class="text-xs text-slate-500">{{ new Date(recipient.sent_at || recipient.created_at).toLocaleString('ru-RU') }}</p><p v-if="recipient.historical" class="text-xs text-slate-400">Старый опрос</p></td>
+                                <td class="p-3">{{ pollDeliveryLabel(recipient.delivery_status) }}</td>
+                                <td class="p-3 max-w-sm"><p>{{ recipient.answer_status === 'answered' ? 'Ответ получен' : recipient.answer_status === 'awaiting' ? 'Ожидает ответа' : 'Опрос не отправлен' }}</p><p v-if="recipient.answer" class="text-xs text-slate-600 mt-1 break-words">{{ recipient.answer }}</p></td>
+                            </tr></tbody>
+                        </table>
+                    </div>
+                    <div v-if="pollRecipientCount > 20" class="flex justify-center items-center gap-4">
+                        <button @click="fetchPollRecipients(pollRecipientPage - 1)" :disabled="pollRecipientsLoading || pollRecipientPage <= 1" class="px-4 py-2 border rounded-xl disabled:opacity-40">Назад</button>
+                        <span>{{ pollRecipientPage }} / {{ Math.ceil(pollRecipientCount / 20) }}</span>
+                        <button @click="fetchPollRecipients(pollRecipientPage + 1)" :disabled="pollRecipientsLoading || pollRecipientPage * 20 >= pollRecipientCount" class="px-4 py-2 border rounded-xl disabled:opacity-40">Далее</button>
                     </div>
                 </div>
 
