@@ -127,6 +127,8 @@ export default {
             funnelStages: [],
             funnelPassengers: [],
             funnelPassengersLoading: false,
+            funnelPassengerRequest: 0,
+            funnelSelectedStage: null,
             funnelPassengersError: null,
             funnelPagination: { page: 1, limit: 20, total: 0, totalPages: 1 },
             funnelAttention: [],
@@ -837,9 +839,10 @@ export default {
             if (f.status && f.status !== 'ALL') params.append('status', f.status);
             if (f.attentionOnly) params.append('attentionOnly', 'true');
             if (f.search) params.append('search', f.search);
+            if (extra.includeStage && this.funnelSelectedStage) params.append('stage', this.funnelSelectedStage.id);
 
             Object.entries(extra).forEach(([k, v]) => {
-                if (v !== undefined && v !== null) params.append(k, v);
+                if (k !== 'includeStage' && v !== undefined && v !== null) params.append(k, v);
             });
             return params.toString();
         },
@@ -874,11 +877,13 @@ export default {
             }
         },
         async fetchFunnelPassengers(page = 1) {
+            const request = ++this.funnelPassengerRequest;
             this.funnelPassengersLoading = true;
             this.funnelPassengersError = null;
             try {
-                const qs = this.buildFunnelQueryParams({ page, limit: this.funnelPagination.limit });
+                const qs = this.buildFunnelQueryParams({ page, limit: this.funnelPagination.limit, includeStage: true });
                 const res = await api.get(`/admin/passenger-funnel/passengers?${qs}`);
+                if (request !== this.funnelPassengerRequest) return;
                 if (res.data?.success) {
                     const raw = Array.isArray(res.data.passengers) ? res.data.passengers : [];
                     this.funnelPassengers = raw.map(p => this.normalizePassenger(p));
@@ -889,12 +894,13 @@ export default {
                     this.funnelPassengersError = 'Не удалось загрузить список пассажиров';
                 }
             } catch (err) {
+                if (request !== this.funnelPassengerRequest) return;
                 console.error('Failed to fetch funnel passengers:', err?.message || err);
                 this.funnelPassengers = [];
                 this.funnelPassengersError = 'Не удалось загрузить список пассажиров';
                 throw err;
             } finally {
-                this.funnelPassengersLoading = false;
+                if (request === this.funnelPassengerRequest) this.funnelPassengersLoading = false;
             }
         },
         async fetchFunnelAttention() {
@@ -1064,6 +1070,7 @@ export default {
             this.setFunnelQuickFilter('attention');
         },
         setQuickStatus(status) {
+            this.funnelSelectedStage = null;
             if (status === 'PHONE_MISMATCH') this.setFunnelQuickFilter('mismatch');
             else if (status === 'BOT_ABANDONED') this.setFunnelQuickFilter('bot_abandoned');
             else if (status === 'LINK_OPENED') this.setFunnelQuickFilter('opened_no_bot');
@@ -1072,6 +1079,15 @@ export default {
                 this.funnelFilters.status = this.funnelFilters.status === status ? 'ALL' : status;
                 this.applyFunnelFilter();
             }
+        },
+        async selectFunnelStage(stage) {
+            this.funnelSelectedStage = stage;
+            this.funnelFilters.status = 'ALL';
+            this.funnelFilters.attentionOnly = false;
+            this.funnelFilters.search = '';
+            this.funnelActiveSubTab = 'table';
+            this.$nextTick(() => this.$refs.funnelPassengerList?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+            try { await this.fetchFunnelPassengers(1); } catch { /* shown in the list */ }
         },
         changeFunnelPage(page) {
             if (page < 1 || (this.funnelPagination && page > this.funnelPagination.totalPages)) return;
@@ -1085,6 +1101,7 @@ export default {
             this.applyFunnelFilter();
         },
         setFunnelQuickFilter(key) {
+            this.funnelSelectedStage = null;
             if (key === 'attention') {
                 this.funnelFilters.attentionOnly = !this.funnelFilters.attentionOnly;
                 this.funnelFilters.status = 'ALL';
@@ -1104,6 +1121,7 @@ export default {
             this.applyFunnelFilter();
         },
         resetFunnelFilters() {
+            this.funnelSelectedStage = null;
             this.funnelFilters = {
                 period: '30days',
                 startDate: '',
@@ -1864,10 +1882,13 @@ export default {
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-9 gap-3">
-                            <div 
+                            <button type="button"
                                 v-for="(st, idx) in (funnelStages || [])" 
-                                :key="st.id" 
-                                class="relative bg-slate-50 hover:bg-amber-50/50 p-4 rounded-2xl border border-slate-200 transition-all flex flex-col justify-between"
+                                :key="st.id"
+                                @click="selectFunnelStage(st)"
+                                :aria-pressed="funnelSelectedStage?.id === st.id"
+                                :class="{ 'ring-2 ring-amber-500': funnelSelectedStage?.id === st.id }"
+                                class="text-left cursor-pointer focus-visible:outline-amber-500 relative bg-slate-50 hover:bg-amber-50/50 p-4 rounded-2xl border border-slate-200 transition-all flex flex-col justify-between"
                             >
                                 <div>
                                     <div class="flex items-center justify-between text-[11px] font-bold text-slate-400 mb-1">
@@ -1886,7 +1907,7 @@ export default {
                                         Базовый этап
                                     </div>
                                 </div>
-                            </div>
+                            </button>
                         </div>
                     </div>
 
@@ -1970,7 +1991,11 @@ export default {
                         </div>
 
                         <!-- Sub-tab 1: Passenger Table -->
-                        <div v-if="funnelActiveSubTab === 'table'" class="p-6">
+                        <div v-if="funnelActiveSubTab === 'table'" ref="funnelPassengerList" class="p-6 scroll-mt-4">
+                            <div v-if="funnelSelectedStage" class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-amber-50 p-4">
+                                <div><p class="font-bold text-slate-900">{{ funnelSelectedStage.name }} · {{ funnelPagination?.total || 0 }} броней</p><p class="text-xs text-slate-500 mt-1">Пассажиры, достигшие этапа, включая прошедших дальше. Одна строка — одна бронь.</p></div>
+                                <button @click="selectFunnelStage(null)" class="px-3 py-2 bg-white border rounded-xl text-sm">Все пассажиры</button>
+                            </div>
                             <!-- State 1: loading -->
                             <div v-if="funnelLoading || funnelPassengersLoading" class="flex items-center justify-center py-20">
                                 <span class="w-8 h-8 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin"></span>
