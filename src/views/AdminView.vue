@@ -2730,7 +2730,7 @@ export default {
                                 <td class="p-3"><p class="font-semibold">{{ recipient.name || 'Пользователь #' + recipient.user_id }}</p><p class="text-xs text-slate-500">{{ recipient.phone || 'Телефон не указан' }}</p><p class="text-xs text-slate-500">TG: {{ recipient.telegram_id }}</p></td>
                                 <td class="p-3">#{{ recipient.booking_id }}<p class="text-xs text-slate-500">{{ new Date(recipient.sent_at || recipient.created_at).toLocaleString('ru-RU') }}</p><p v-if="recipient.historical" class="text-xs text-slate-400">Старый опрос</p></td>
                                 <td class="p-3">{{ pollDeliveryLabel(recipient.delivery_status) }}<p class="text-xs text-slate-500 mt-1">{{ recipient.question_snapshot || 'Старый опрос: вопрос не сохранён' }}</p></td>
-                                <td class="p-3 max-w-sm"><p>{{ recipient.answer_status === 'answered' ? 'Ответ получен' : recipient.answer_status === 'awaiting' ? 'Ожидает ответа' : 'Опрос не отправлен' }}</p><p v-if="recipient.answer" class="text-xs text-slate-600 mt-1 break-words">{{ recipient.answer }}</p></td>
+                                <td class="p-3 max-w-sm"><p>{{ recipient.answer_status === 'answered' ? 'Ответ получен' : recipient.answer_status === 'awaiting' ? 'Ожидает ответа' : 'Ответ не получен' }}</p><p v-if="recipient.answer" class="text-xs text-slate-600 mt-1 break-words">{{ recipient.answer }}</p></td>
                             </tr></tbody>
                         </table>
                     </div>
