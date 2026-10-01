@@ -102,7 +102,7 @@ export default {
                 { id: 'passenger-funnel', label: 'Воронка пассажиров' },
                 { id: 'sources-campaigns', label: 'Источники и кампании' },
                 { id: 'users', label: 'Пользователи' },
-                { id: 'bus-drivers', label: 'Водители автобусов' },
+                { id: 'bus-drivers', label: 'Перевозчики' },
                 { id: 'rides', label: 'Попутки' },
                 { id: 'bus-tickets', label: 'Автобусы' },
                 { id: 'reviews', label: 'Отзывы' },
@@ -407,17 +407,17 @@ export default {
             this.loading = true;
             try {
                 await api.post('/admin/bus-drivers', this.newBusDriver);
-                alert('Водитель автобуса успешно создан');
+                alert('Перевозчик успешно создан');
                 this.newBusDriver = { name: '', surname: '', phone: '', password: '' };
                 this.fetchBusDrivers();
             } catch (e) {
-                alert(e.response?.data?.error || 'Ошибка при создании водителя');
+                alert(e.response?.data?.error || 'Ошибка при создании перевозчика');
             } finally {
                 this.loading = false;
             }
         },
         async blockDriver(id) {
-            if (confirm('Заблокировать водителя? Он не сможет создавать новые рейсы.')) {
+            if (confirm('Заблокировать перевозчика? Он не сможет создавать новые рейсы.')) {
                 try {
                     await api.put(`/admin/bus-drivers/${id}/block`);
                     this.fetchBusDrivers();
@@ -425,7 +425,7 @@ export default {
             }
         },
         async unblockDriver(id) {
-            if (confirm('Разблокировать водителя?')) {
+            if (confirm('Разблокировать перевозчика?')) {
                 try {
                     await api.put(`/admin/bus-drivers/${id}/unblock`);
                     this.fetchBusDrivers();
@@ -2139,10 +2139,10 @@ export default {
 
             <!-- Bus Drivers Section -->
             <section v-if="activeTab === 'bus-drivers'" class="space-y-6 lg:space-y-8">
-                <h2 class="text-2xl lg:text-3xl text-slate-900 font-bold">Водители автобусов</h2>
+                <h2 class="text-2xl lg:text-3xl text-slate-900 font-bold">Перевозчики</h2>
                 
                 <div class="bg-white rounded-2xl lg:rounded-[32px] border border-slate-100 p-6 lg:p-8 shadow-sm space-y-6">
-                    <h3 class="text-xl font-bold text-amber-600">Добавить водителя</h3>
+                    <h3 class="text-xl font-bold text-amber-600">Добавить перевозчика</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         <input v-model="newBusDriver.name" placeholder="Имя" class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 outline-none focus:border-amber-500" />
                         <input v-model="newBusDriver.surname" placeholder="Фамилия" class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 outline-none focus:border-amber-500" />
@@ -2150,7 +2150,7 @@ export default {
                         <input v-model="newBusDriver.password" placeholder="Пароль" type="text" class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 outline-none focus:border-amber-500" />
                     </div>
                     <div class="flex justify-end">
-                        <button @click="createBusDriver" :disabled="loading" class="bg-amber-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:-translate-y-1 transition-all disabled:opacity-50">Создать водителя</button>
+                        <button @click="createBusDriver" :disabled="loading" class="bg-amber-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:-translate-y-1 transition-all disabled:opacity-50">Создать перевозчика</button>
                     </div>
                 </div>
 
@@ -2818,7 +2818,7 @@ export default {
                         <span class="w-8 h-8 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin"></span>
                     </div>
                     <div v-else-if="selectedBusDriverTickets.length === 0" class="text-center py-20 text-slate-400">
-                        <p class="text-lg font-medium">У этого водителя нет рейсов</p>
+                        <p class="text-lg font-medium">У этого перевозчика нет рейсов</p>
                     </div>
                     <div v-else class="overflow-x-auto rounded-2xl border border-slate-100">
                         <table class="w-full text-left min-w-[800px]">
