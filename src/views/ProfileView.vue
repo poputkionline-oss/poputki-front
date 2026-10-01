@@ -300,6 +300,16 @@ export default {
 
         <div class="h-px bg-gray-50 mx-4"></div>
 
+        <button @click="$router.push('/my-reviews')" class="flex items-center w-full p-4 hover:bg-gray-50 rounded-2xl transition-colors">
+          <div class="w-12 h-12 bg-amber-50 text-amber-500 rounded-2xl flex items-center justify-center mr-4 text-2xl">★</div>
+          <div class="text-left flex-1">
+            <h3 class="font-bold text-slate-800">Мои отзывы</h3>
+            <p class="text-sm text-gray-400">Ваши оценки и комментарии о поездках</p>
+          </div>
+          <span class="text-gray-300">→</span>
+        </button>
+        <div class="h-px bg-gray-50 mx-4"></div>
+
         <button class="w-full text-left p-4 hover:bg-gray-50 rounded-2xl flex justify-between items-center group transition-colors">
           <div class="flex items-center space-x-4">
              <div class="w-12 h-12 rounded-2xl bg-purple-50 flex items-center justify-center text-purple-500 group-hover:scale-110 transition-transform">
