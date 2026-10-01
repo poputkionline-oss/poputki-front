@@ -160,6 +160,9 @@ export default {
             pollAnswerPage: 1,
             pollAnswerCount: 0,
             pollDeliveryStatus: null,
+            pollTemplates: [],
+            pollRecipientFilter: 'all',
+            pollRecipientRequest: 0,
             pollRecipients: [],
             pollRecipientPage: 1,
             pollRecipientCount: 0,
@@ -646,16 +649,30 @@ export default {
             catch { this.pollDeliveryStatus = null; }
         },
         async fetchPollRecipients(page = 1) {
+            const request = ++this.pollRecipientRequest;
             this.pollRecipientsLoading = true;
             this.pollRecipientsError = '';
             try {
-                const { data } = await api.get('/admin/polls/recipients', { params: { page } });
+                const { data } = await api.get('/admin/polls/recipients', { params: { page, filter: this.pollRecipientFilter } });
+                if (request !== this.pollRecipientRequest) return;
                 this.pollRecipients = data.recipients;
                 this.pollRecipientCount = data.count;
                 this.pollRecipientPage = page;
             } catch {
-                this.pollRecipientsError = 'Не удалось загрузить получателей. Нажмите «Обновить».';
-            } finally { this.pollRecipientsLoading = false; }
+                if (request === this.pollRecipientRequest) this.pollRecipientsError = 'Не удалось загрузить получателей. Нажмите «Обновить».';
+            } finally { if (request === this.pollRecipientRequest) this.pollRecipientsLoading = false; }
+        },
+        selectPollRecipients(filter) {
+            this.pollRecipientFilter = filter;
+            this.fetchPollRecipients(1);
+            this.$nextTick(() => this.$refs.pollRecipientList?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+        },
+        applyPollTemplate(template) {
+            this.pollSettings = { ...this.pollSettings, question: template.question, option1: template.option1,
+                option2: template.option2, option3: template.option3, event_type: template.event_type };
+        },
+        pollFilterLabel(filter) {
+            return { all: 'Все получатели', sent: 'Отправленные опросы', answered: 'Ответившие', awaiting: 'Ожидают ответа', issues: 'Ошибки и неподтверждённые отправки' }[filter];
         },
         pollDeliveryLabel(status) {
             return { sent: 'Отправлен', processing: 'Отправляется', failed: 'Ошибка', uncertain: 'Отправка не подтверждена', skipped: 'Пропущен' }[status] || status;
@@ -663,8 +680,9 @@ export default {
         async fetchPollSettings() {
             this.pollSettingsLoading = true;
             try {
-                const res = await api.get('/admin/polls/settings');
+                const [res, templates] = await Promise.all([api.get('/admin/polls/settings'), api.get('/admin/polls/templates')]);
                 this.pollSettings = res.data;
+                this.pollTemplates = templates.data.templates;
             } catch (e) {
                 alert('Ошибка загрузки настроек опроса: ' + (e.response?.data?.error || e.message));
             } finally {
@@ -2692,26 +2710,26 @@ export default {
                 </div>
 
                 <div v-if="pollDeliveryStatus" class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div class="bg-white rounded-2xl border p-5"><p class="text-sm text-slate-500">Отправлено опросов — всего</p><p class="text-3xl font-bold mt-2">{{ pollDeliveryStatus.sent_total }}</p><p class="text-xs text-slate-400 mt-1">Включая старые отправки</p></div>
-                    <div class="bg-white rounded-2xl border p-5"><p class="text-sm text-slate-500">Получено ответов</p><p class="text-3xl font-bold mt-2">{{ pollDeliveryStatus.answered_total }}</p></div>
-                    <div class="bg-white rounded-2xl border p-5"><p class="text-sm text-slate-500">Ожидают ответа</p><p class="text-3xl font-bold mt-2">{{ pollDeliveryStatus.awaiting_total }}</p></div>
-                    <div class="bg-white rounded-2xl border p-5"><p class="text-sm text-slate-500">Ошибок / не подтверждено</p><p class="text-3xl font-bold mt-2">{{ pollDeliveryStatus.failed }} / {{ pollDeliveryStatus.uncertain }}</p></div>
+                    <button type="button" @click="selectPollRecipients('sent')" :aria-pressed="pollRecipientFilter === 'sent'" class="text-left bg-white rounded-2xl border p-5 hover:border-amber-500 focus-visible:outline-amber-500" :class="{ 'ring-2 ring-amber-500': pollRecipientFilter === 'sent' }"><p class="text-sm text-slate-500">Отправлено опросов — всего</p><p class="text-3xl font-bold mt-2">{{ pollDeliveryStatus.sent_total }}</p><p class="text-xs text-slate-400 mt-1">Включая старые отправки</p></button>
+                    <button type="button" @click="selectPollRecipients('answered')" :aria-pressed="pollRecipientFilter === 'answered'" class="text-left bg-white rounded-2xl border p-5 hover:border-amber-500 focus-visible:outline-amber-500" :class="{ 'ring-2 ring-amber-500': pollRecipientFilter === 'answered' }"><p class="text-sm text-slate-500">Получено ответов</p><p class="text-3xl font-bold mt-2">{{ pollDeliveryStatus.answered_total }}</p></button>
+                    <button type="button" @click="selectPollRecipients('awaiting')" :aria-pressed="pollRecipientFilter === 'awaiting'" class="text-left bg-white rounded-2xl border p-5 hover:border-amber-500 focus-visible:outline-amber-500" :class="{ 'ring-2 ring-amber-500': pollRecipientFilter === 'awaiting' }"><p class="text-sm text-slate-500">Ожидают ответа</p><p class="text-3xl font-bold mt-2">{{ pollDeliveryStatus.awaiting_total }}</p></button>
+                    <button type="button" @click="selectPollRecipients('issues')" :aria-pressed="pollRecipientFilter === 'issues'" class="text-left bg-white rounded-2xl border p-5 hover:border-amber-500 focus-visible:outline-amber-500" :class="{ 'ring-2 ring-amber-500': pollRecipientFilter === 'issues' }"><p class="text-sm text-slate-500">Ошибок / не подтверждено</p><p class="text-3xl font-bold mt-2">{{ pollDeliveryStatus.failed }} / {{ pollDeliveryStatus.uncertain }}</p></button>
                 </div>
                 <p v-else class="text-sm text-amber-700">Счётчики недоступны. Нажмите «Обновить».</p>
 
-                <div class="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm space-y-4">
-                    <h3 class="font-bold text-lg">Получатели опросов ({{ pollRecipientCount }})</h3>
+                <div ref="pollRecipientList" class="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm space-y-4 scroll-mt-4">
+                    <div class="flex flex-wrap items-center justify-between gap-3"><h3 class="font-bold text-lg">{{ pollFilterLabel(pollRecipientFilter) }} ({{ pollRecipientCount }})</h3><button v-if="pollRecipientFilter !== 'all'" @click="selectPollRecipients('all')" class="text-sm border rounded-xl px-3 py-2">Все получатели</button></div>
                     <p class="text-xs text-slate-500">Статус «Отправлен» означает подтверждение Telegram, а не прочтение. Старые опросы включены в список.</p>
                     <p v-if="pollRecipientsError" class="text-sm text-red-600">{{ pollRecipientsError }}</p>
                     <p v-else-if="pollRecipientsLoading" class="text-sm text-slate-500">Загрузка получателей…</p>
-                    <p v-else-if="!pollRecipients.length" class="text-sm text-slate-500">Отправок пока нет.</p>
+                    <p v-else-if="!pollRecipients.length" class="text-sm text-slate-500">В выбранном списке нет получателей.</p>
                     <div v-else class="overflow-x-auto">
                         <table class="w-full text-sm text-left">
                             <thead class="text-xs text-slate-500 border-b"><tr><th class="p-3">Получатель</th><th class="p-3">Бронь / дата</th><th class="p-3">Отправка</th><th class="p-3">Ответ</th></tr></thead>
                             <tbody><tr v-for="recipient in pollRecipients" :key="recipient.id" class="border-b last:border-0 align-top">
                                 <td class="p-3"><p class="font-semibold">{{ recipient.name || 'Пользователь #' + recipient.user_id }}</p><p class="text-xs text-slate-500">{{ recipient.phone || 'Телефон не указан' }}</p><p class="text-xs text-slate-500">TG: {{ recipient.telegram_id }}</p></td>
                                 <td class="p-3">#{{ recipient.booking_id }}<p class="text-xs text-slate-500">{{ new Date(recipient.sent_at || recipient.created_at).toLocaleString('ru-RU') }}</p><p v-if="recipient.historical" class="text-xs text-slate-400">Старый опрос</p></td>
-                                <td class="p-3">{{ pollDeliveryLabel(recipient.delivery_status) }}</td>
+                                <td class="p-3">{{ pollDeliveryLabel(recipient.delivery_status) }}<p class="text-xs text-slate-500 mt-1">{{ recipient.question_snapshot || 'Старый опрос: вопрос не сохранён' }}</p></td>
                                 <td class="p-3 max-w-sm"><p>{{ recipient.answer_status === 'answered' ? 'Ответ получен' : recipient.answer_status === 'awaiting' ? 'Ожидает ответа' : 'Опрос не отправлен' }}</p><p v-if="recipient.answer" class="text-xs text-slate-600 mt-1 break-words">{{ recipient.answer }}</p></td>
                             </tr></tbody>
                         </table>
@@ -2734,13 +2752,23 @@ export default {
                             <span class="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></span>
                         </div>
                         <div v-else class="space-y-4">
+                            <div class="space-y-3">
+                                <h4 class="font-bold text-sm">Готовые опросы</h4>
+                                <p class="text-xs text-slate-500">Выберите опрос и сохраните изменения. Автоматически отправляется один выбранный опрос.</p>
+                                <button v-for="template in pollTemplates" :key="template.id" type="button" @click="applyPollTemplate(template)" class="w-full text-left p-3 border rounded-xl hover:border-amber-500" :class="{ 'border-amber-500 bg-amber-50': pollSettings.question === template.question && pollSettings.event_type === template.event_type }">
+                                    <p class="font-semibold text-sm">{{ template.title }}</p>
+                                    <p class="text-xs text-slate-600 mt-1">{{ template.question }}</p>
+                                    <p class="text-xs text-slate-500 mt-1">{{ template.option1 }} · {{ template.option2 }} · {{ template.option3 }} · Свой вариант</p>
+                                    <p class="text-xs text-amber-700 mt-1">{{ template.event_type === 'completed' ? 'После завершённой поездки' : 'После неоплаченной брони' }}</p>
+                                </button>
+                            </div>
                             <!-- Question -->
                             <label class="flex gap-2 items-center text-sm font-semibold"><input type="checkbox" v-model="pollSettings.enabled" /> Отправлять опросы автоматически</label>
                             <div class="grid grid-cols-2 gap-3">
-                                <label class="text-xs text-slate-500">Минут после истечения оплаты<input type="number" min="1" max="1440" v-model.number="pollSettings.delay_minutes" class="w-full mt-1 rounded-xl border p-3 text-slate-800" /></label>
+                                <label class="text-xs text-slate-500">{{ pollSettings.event_type === 'completed' ? 'Минут после завершения рейса' : 'Минут после истечения оплаты' }}<input type="number" min="1" max="1440" v-model.number="pollSettings.delay_minutes" class="w-full mt-1 rounded-xl border p-3 text-slate-800" /></label>
                                 <label class="text-xs text-slate-500">Не чаще одного раза в … дней<input type="number" min="1" max="365" v-model.number="pollSettings.cooldown_days" class="w-full mt-1 rounded-xl border p-3 text-slate-800" /></label>
                             </div>
-                            <p class="text-xs text-slate-500">Опрос отправляется после неоплаченной онлайн-брони. Перед отправкой повторно проверяется оплата. Ручные брони и старые отмены исключены.</p>
+                            <p class="text-xs text-slate-500">{{ pollSettings.event_type === 'completed' ? 'Опрос отправляется после нового завершения рейса только пассажирам с подтверждённой онлайн-бронью и отметкой посадки. Старые завершённые рейсы исключены.' : 'Опрос отправляется после неоплаченной онлайн-брони. Перед отправкой повторно проверяется оплата. Ручные брони и старые отмены исключены.' }}</p>
                             <div class="space-y-1">
                                 <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Текст вопроса</label>
                                 <textarea v-model="pollSettings.question" maxlength="300" rows="3" placeholder="Напр. Что помешало вам завершить покупку?" class="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-500 transition-all"></textarea>
@@ -2764,7 +2792,7 @@ export default {
                             <div class="space-y-1 opacity-75">
                                 <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Вариант 4 (Фиксированный)</label>
                                 <div class="w-full bg-slate-100 border border-slate-200 text-slate-500 rounded-xl p-3.5 text-sm font-medium">
-                                    Ваш вариант (напишите, что именно помешало)
+                                    Свой вариант (напишите ответ)
                                 </div>
                             </div>
                             <!-- Save Button -->
