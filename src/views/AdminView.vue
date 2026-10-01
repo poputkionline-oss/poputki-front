@@ -155,8 +155,11 @@ export default {
             reviewSubmitting: false,
             showReviewModal: false,
             reviewSuccessMessage: '',
-            pollSettings: { question: '', option1: '', option2: '', option3: '' },
+            pollSettings: { question: '', option1: '', option2: '', option3: '', enabled: true, delay_minutes: 15, cooldown_days: 7 },
             pollAnswers: [],
+            pollAnswerPage: 1,
+            pollAnswerCount: 0,
+            pollDeliveryStatus: null,
             pollSettingsLoading: false,
             pollAnswersLoading: false,
             savingPollSettings: false,
@@ -632,7 +635,9 @@ export default {
 
         async fetchPollData() {
             this.fetchPollSettings();
-            this.fetchPollAnswers();
+            this.fetchPollAnswers(1);
+            try { this.pollDeliveryStatus = (await api.get('/admin/polls/status')).data; }
+            catch { this.pollDeliveryStatus = null; }
         },
         async fetchPollSettings() {
             this.pollSettingsLoading = true;
@@ -645,11 +650,13 @@ export default {
                 this.pollSettingsLoading = false;
             }
         },
-        async fetchPollAnswers() {
+        async fetchPollAnswers(page = 1) {
             this.pollAnswersLoading = true;
             try {
-                const res = await api.get('/admin/polls/answers');
-                this.pollAnswers = res.data;
+                const res = await api.get('/admin/polls/answers', { params: { page } });
+                this.pollAnswers = res.data.answers;
+                this.pollAnswerPage = page;
+                this.pollAnswerCount = res.data.count;
             } catch (e) {
                 alert('Ошибка загрузки ответов: ' + (e.response?.data?.error || e.message));
             } finally {
@@ -2674,24 +2681,30 @@ export default {
                         </div>
                         <div v-else class="space-y-4">
                             <!-- Question -->
+                            <label class="flex gap-2 items-center text-sm font-semibold"><input type="checkbox" v-model="pollSettings.enabled" /> Отправлять опросы автоматически</label>
+                            <div class="grid grid-cols-2 gap-3">
+                                <label class="text-xs text-slate-500">Минут после истечения оплаты<input type="number" min="1" max="1440" v-model.number="pollSettings.delay_minutes" class="w-full mt-1 rounded-xl border p-3 text-slate-800" /></label>
+                                <label class="text-xs text-slate-500">Не чаще одного раза в … дней<input type="number" min="1" max="365" v-model.number="pollSettings.cooldown_days" class="w-full mt-1 rounded-xl border p-3 text-slate-800" /></label>
+                            </div>
+                            <p class="text-xs text-slate-500">Опрос отправляется после неоплаченной онлайн-брони. Перед отправкой повторно проверяется оплата. Ручные брони и старые отмены исключены.</p>
                             <div class="space-y-1">
                                 <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Текст вопроса</label>
-                                <textarea v-model="pollSettings.question" rows="3" placeholder="Напр. Что помешало вам завершить покупку?" class="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-500 transition-all"></textarea>
+                                <textarea v-model="pollSettings.question" maxlength="300" rows="3" placeholder="Напр. Что помешало вам завершить покупку?" class="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-500 transition-all"></textarea>
                             </div>
                             <!-- Option 1 -->
                             <div class="space-y-1">
                                 <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Вариант 1 (Кнопка)</label>
-                                <input v-model="pollSettings.option1" placeholder="Вариант ответа 1" class="w-full bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-500 transition-all" />
+                                <input v-model="pollSettings.option1" maxlength="100" placeholder="Вариант ответа 1" class="w-full bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-500 transition-all" />
                             </div>
                             <!-- Option 2 -->
                             <div class="space-y-1">
                                 <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Вариант 2 (Кнопка)</label>
-                                <input v-model="pollSettings.option2" placeholder="Вариант ответа 2" class="w-full bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-500 transition-all" />
+                                <input v-model="pollSettings.option2" maxlength="100" placeholder="Вариант ответа 2" class="w-full bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-500 transition-all" />
                             </div>
                             <!-- Option 3 -->
                             <div class="space-y-1">
                                 <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Вариант 3 (Кнопка)</label>
-                                <input v-model="pollSettings.option3" placeholder="Вариант ответа 3" class="w-full bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-500 transition-all" />
+                                <input v-model="pollSettings.option3" maxlength="100" placeholder="Вариант ответа 3" class="w-full bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-500 transition-all" />
                             </div>
                             <!-- Option 4 (Fixed) -->
                             <div class="space-y-1 opacity-75">
@@ -2711,8 +2724,9 @@ export default {
                     <!-- Right: Answers List -->
                     <div class="lg:col-span-2 space-y-4">
                         <div class="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm">
-                            <h3 class="font-bold text-lg text-slate-800 mb-2">Ответы пользователей ({{ pollAnswers.length }})</h3>
+                            <h3 class="font-bold text-lg text-slate-800 mb-2">Ответы пользователей ({{ pollAnswerCount }})</h3>
                             <p class="text-xs text-slate-400">Ответы, полученные от клиентов в Telegram боте</p>
+                            <p v-if="pollDeliveryStatus" class="text-xs text-slate-500 mt-3">Новая отправка: успешно {{ pollDeliveryStatus.sent }} · Не подтверждено {{ pollDeliveryStatus.uncertain }} · Ошибок {{ pollDeliveryStatus.failed }}. {{ pollDeliveryStatus.webhook_ready ? 'Приём ответов настроен.' : 'Приём ответов требует проверки.' }}</p>
                         </div>
 
                         <div v-if="pollAnswersLoading" class="flex justify-center py-20">
@@ -2744,6 +2758,7 @@ export default {
                                     </div>
 
                                     <!-- Selected Answer -->
+                                    <p class="text-xs text-slate-500">{{ ans.question_snapshot || 'Старый опрос: исходный вопрос не был сохранён' }}</p>
                                     <div class="bg-slate-50 border border-slate-100 rounded-2xl p-4">
                                         <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Ответ клиента</div>
                                         <p class="text-sm font-bold text-slate-800 leading-relaxed">
@@ -2768,6 +2783,11 @@ export default {
                                     </span>
                                 </div>
                             </div>
+                        </div>
+                        <div v-if="pollAnswerCount > 20" class="flex justify-center items-center gap-4">
+                            <button @click="fetchPollAnswers(pollAnswerPage - 1)" :disabled="pollAnswersLoading || pollAnswerPage <= 1" class="px-4 py-2 border rounded-xl disabled:opacity-40">Назад</button>
+                            <span>{{ pollAnswerPage }} / {{ Math.ceil(pollAnswerCount / 20) }}</span>
+                            <button @click="fetchPollAnswers(pollAnswerPage + 1)" :disabled="pollAnswersLoading || pollAnswerPage * 20 >= pollAnswerCount" class="px-4 py-2 border rounded-xl disabled:opacity-40">Далее</button>
                         </div>
                     </div>
                 </div>
