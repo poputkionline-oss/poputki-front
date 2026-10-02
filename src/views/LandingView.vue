@@ -139,7 +139,7 @@ export default {
                 <!-- Hero Text -->
                 <div class="lg:col-span-5 text-center lg:text-left space-y-6 lg:pr-8">
                     <div class="inline-flex items-center space-x-2 bg-amber-50 border border-amber-200/50 px-4 py-1.5 rounded-full text-xs font-bold tracking-wide mb-2 text-amber-600">
-                        №1 Сервис совместных поездок
+                        Автобусные рейсы и совместные поездки
                     </div>
                     <h1 class="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 leading-[1.1]">
                         Попути —<br class="hidden lg:block"/> 

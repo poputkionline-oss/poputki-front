@@ -8,11 +8,15 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
+      workbox: {
+        navigateFallbackDenylist: [/^\/robots\.txt$/, /^\/sitemap\.xml$/]
+      },
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
         name: 'Poputki.online',
         short_name: 'Poputki',
-        description: 'Find rides and travel together',
+        description: 'Поиск и бронирование автобусных рейсов и совместных поездок',
+        lang: 'ru',
         theme_color: '#ffffff',
         icons: [
           {

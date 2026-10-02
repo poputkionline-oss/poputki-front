@@ -196,6 +196,13 @@ const router = createRouter({
                     }
                 }
             }
+        },
+        {
+            // Must stay last: anything that matched nothing above.
+            path: '/:pathMatch(.*)*',
+            name: 'not-found',
+            component: () => import('../views/NotFoundView.vue'),
+            meta: { hideBottomNav: true }
         }
     ],
     scrollBehavior(to, from, savedPosition) {
@@ -278,7 +285,7 @@ router.beforeEach(async (to, from, next) => {
     const isAuthenticated = !!localStorage.getItem('token');
     user = JSON.parse(localStorage.getItem('user')); // Re-fetch after possible sync
     const isComplete = isProfileComplete(user);
-    const publicRoutes = ['auth', 'admin', 'admin-passenger-funnel', 'bus-admin', 'ride-details', 'landing', 'search', 'payment-result', 'ticket-verification', 'ticket-verify-alias', 'ticket-preview', 'claim-landing', 'ticket-subscribe', 'terms', 'tracked-link-redirect', 'referral-link-redirect'];
+    const publicRoutes = ['auth', 'admin', 'admin-passenger-funnel', 'bus-admin', 'ride-details', 'landing', 'search', 'payment-result', 'ticket-verification', 'ticket-verify-alias', 'ticket-preview', 'claim-landing', 'ticket-subscribe', 'terms', 'tracked-link-redirect', 'referral-link-redirect', 'not-found'];
 
     if (!publicRoutes.includes(to.name)) {
         if (!isAuthenticated || !isComplete) {
