@@ -43,3 +43,33 @@ describe('SEO route policy', () => {
         for (const bad of ['aggregateRating', 'telephone', 'address', 'sameAs', 'offers']) assert.ok(!txt.includes(bad));
     });
 });
+
+describe('Static SEO assets', () => {
+    const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
+
+    it('index.html has no static canonical/og:url (SPA fallback serves it for every URL)', () => {
+        const html = read('../index.html');
+        assert.ok(!/rel="canonical"/.test(html));
+        assert.ok(!/og:url/.test(html));
+    });
+
+    it('robots.txt does not Disallow pages that rely on noindex', () => {
+        const dis = read('../public/robots.txt').split('\n').filter(l => l.startsWith('Disallow:')).map(l => l.slice(9).trim());
+        assert.deepEqual(dis, ['/l/', '/r/']);
+        assert.ok(/Sitemap: https:\/\/www\.poputki\.online\/sitemap\.xml/.test(read('../public/robots.txt')));
+    });
+
+    it('sitemap lists exactly / and /terms, no lastmod or query', () => {
+        const xml = read('../public/sitemap.xml');
+        assert.deepEqual([...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => m[1]), ['https://www.poputki.online/', 'https://www.poputki.online/terms']);
+        assert.ok(!/lastmod/.test(xml) && !/<loc>[^<]*\?/.test(xml));
+    });
+
+    it('vercel.json sends X-Robots-Tag noindex for token routes', () => {
+        const v = JSON.parse(read('../vercel.json'));
+        for (const src of ['/t/:token', '/ticket/:token', '/ticket-verify/:token', '/ticket-subscribe/:verificationToken']) {
+            const h = v.headers.find(x => x.source === src);
+            assert.ok(h && h.headers.some(x => x.key === 'X-Robots-Tag' && /noindex/.test(x.value)), src);
+        }
+    });
+});

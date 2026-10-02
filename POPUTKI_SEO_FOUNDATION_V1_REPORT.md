@@ -23,7 +23,7 @@ ROUTE_POLICY (by route *name*; fail-safe: unknown name => noindex,nofollow):
 - C. PRIVATE (`noindex,nofollow`): everything else — /create, /preferences, /bookings, /ride/:id(+select-seat), /bus-admin, /profile, /auth, /my-rides, /vehicle, /driver/:id/reviews, /user/:id, /bus-ticket/:id, /bus-booking/:id/step/:step, /my-bus-tickets, /my-reviews, /admin*, /payment-result, /ticket/:token, /ticket-verify/:token, /t/:token, /ticket-subscribe/:verificationToken, /ticket-preview, /l/:token, /r/:code, 404.
 - A unit test asserts every route name in router/index.js has a policy entry and only landing+terms are indexable.
 
-ROBOTS: public/robots.txt — Allow /, Disallow for private/service paths (incl. /ticket/, /ticket-verify/, /ticket-subscribe/, /t/, /l/, /r/, /bus-booking/), Sitemap line. JS/CSS/assets not blocked. Not treated as protection.
+ROBOTS: public/robots.txt — Allow /, Disallow ONLY /l/ and /r/ (non-HTML redirect endpoints), Sitemap line. Private/token pages are deliberately crawlable so crawlers can read `noindex` (meta via SEO manager + `X-Robots-Tag: noindex, nofollow` header in vercel.json for token, ticket, admin, auth, profile, booking and payment routes). robots.txt is not a security mechanism; protection = auth + opaque tokens. (Corrective commit.)
 SITEMAP: public/sitemap.xml — `/` and `/terms` only; no lastmod (no reliable date); no query URLs.
 CANONICAL: built from a fixed path + fixed origin `https://www.poputki.online`, never from the request URL, so utm_*, fbclid, gclid, tgWebApp*, processedStartParam, route params (tokens) can't enter it. Only indexable routes have a canonical; noindex routes have none (removed on navigation).
 NOINDEX: verified in a real browser (see TESTS).
@@ -56,8 +56,7 @@ NOT_VERIFIED (no E2E infra / needs real backend or Telegram):
 KNOWN_LIMITATIONS:
 - Unknown URLs return HTTP 200 (soft 404) on Vercel.
 - Social image: the only production asset is `/logo-itself.png` (376x453 logo). Used with `twitter:card=summary`. No 1200x630 preview exists; I did not invent one — recommend producing `/og-default.png`.
-- Static `index.html` carries canonical=`/` and no robots meta; crawlers that don't run JS see the home canonical on every URL and no noindex on token pages (Googlebot renders JS, so the manager's values apply). Prerender/SSR in V2 resolves this.
-- robots.txt Disallow stops crawlers from seeing `noindex` on those paths (URL-only listing is still theoretically possible); noindex is intentionally also set, and the pages are token-gated. Deliberate trade-off for token paths.
+- Static `index.html` no longer has canonical/og:url (corrective commit): non-JS crawlers get no wrong home canonical on /terms, /search, tokens or unknown URLs. Cost: raw HTML of `/` has no canonical (self-canonical by default; JS crawlers get it from the manager). Non-JS crawlers also get no meta noindex on unknown URLs / `/search` / `/ride/:id` etc. (header covers token, admin, auth, profile, booking, payment routes only). V2 prerender resolves this.
 - Public manifest icons `pwa-192x192.png` / `pwa-512x512.png` and `favicon.ico`, `apple-touch-icon.png`, `masked-icon.svg` are referenced but absent from `public/` (pre-existing; installability risk, out of scope).
 - Landing still has old "попутки" copy ("Создать попутку", "Найти попутку", "Для водителей", "Окупайте расходы на бензин", "Попути — дешевле и быстрее" H1): recommended for the next stage's positioning pass (bus-first H1/copy).
 - `/ride/:id`, `/user/:id` are publicly reachable (existing guard) — now noindex,nofollow.

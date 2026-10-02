@@ -1,24 +1,10 @@
 User-agent: *
 Allow: /
-# Service / private areas (not a privacy mechanism: these pages also carry
-# noindex and are protected by authentication).
-Disallow: /admin
-Disallow: /bus-admin
-Disallow: /auth
-Disallow: /profile
-Disallow: /preferences
-Disallow: /bookings
-Disallow: /my-rides
-Disallow: /my-bus-tickets
-Disallow: /my-reviews
-Disallow: /vehicle
-Disallow: /payment-result
-Disallow: /bus-booking/
-Disallow: /ticket/
-Disallow: /ticket-verify/
-Disallow: /ticket-subscribe/
-Disallow: /ticket-preview
-Disallow: /t/
+# Only non-HTML redirect endpoints are disallowed. Private/sensitive pages are
+# deliberately NOT disallowed: crawlers must be able to fetch them to see
+# noindex (meta robots set by the SEO manager, X-Robots-Tag set in vercel.json).
+# robots.txt is not a security mechanism; access is protected by authentication
+# and opaque tokens.
 Disallow: /l/
 Disallow: /r/
 
