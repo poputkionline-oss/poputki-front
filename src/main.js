@@ -3,6 +3,10 @@ import './style.css'
 import App from './App.vue'
 import router from './router'
 import { initTelegram } from './telegram'
+import { installSeo } from './seo/seoManager'
+
+// Centralised <head> SEO management (title/meta/canonical/OG/JSON-LD)
+installSeo(router);
 
 // Initialize Telegram SDK
 initTelegram();

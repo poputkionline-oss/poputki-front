@@ -4,7 +4,104 @@
             "source": "/t/:token",
             "headers": [
                 { "key": "Cache-Control", "value": "no-store" },
-                { "key": "Referrer-Policy", "value": "no-referrer" }
+                { "key": "Referrer-Policy", "value": "no-referrer" },
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+            ]
+        },
+        {
+            "source": "/ticket/:token",
+            "headers": [
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+            ]
+        },
+        {
+            "source": "/ticket-verify/:token",
+            "headers": [
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+            ]
+        },
+        {
+            "source": "/ticket-subscribe/:verificationToken",
+            "headers": [
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+            ]
+        },
+        {
+            "source": "/ticket-preview",
+            "headers": [
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+            ]
+        },
+        {
+            "source": "/admin/:path*",
+            "headers": [
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+            ]
+        },
+        {
+            "source": "/bus-admin",
+            "headers": [
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+            ]
+        },
+        {
+            "source": "/auth",
+            "headers": [
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+            ]
+        },
+        {
+            "source": "/profile",
+            "headers": [
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+            ]
+        },
+        {
+            "source": "/preferences",
+            "headers": [
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+            ]
+        },
+        {
+            "source": "/bookings",
+            "headers": [
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+            ]
+        },
+        {
+            "source": "/my-rides",
+            "headers": [
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+            ]
+        },
+        {
+            "source": "/my-bus-tickets",
+            "headers": [
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+            ]
+        },
+        {
+            "source": "/my-reviews",
+            "headers": [
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+            ]
+        },
+        {
+            "source": "/vehicle",
+            "headers": [
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+            ]
+        },
+        {
+            "source": "/payment-result",
+            "headers": [
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+            ]
+        },
+        {
+            "source": "/bus-booking/:path*",
+            "headers": [
+                { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
             ]
         }
     ],
