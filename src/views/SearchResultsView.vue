@@ -1,5 +1,6 @@
 <script>
 import api from '../api';
+import geolocationMixin from '../mixins/geolocationMixin';
 import { getTelegramUser, getTelegramInitData } from '../telegram';
 import acquisitionService from '../services/acquisitionService';
 
@@ -14,6 +15,7 @@ function resolveActiveTab(queryTab) {
 }
 
 export default {
+  mixins: [geolocationMixin],
   data() {
     return {
       activeTab: resolveActiveTab(this.$route.query.tab), // 'rides' | 'buses'
@@ -89,6 +91,7 @@ export default {
     },
     async switchTab(tab) {
       if (this.activeTab === tab) return;
+      this.markOriginChanged();
       this.activeTab = tab;
       this.showAltOffer = false;
       this.fromCity = '';
@@ -194,9 +197,10 @@ export default {
         this.$router.replace({ query: {} });
       }, 4000);
     }
+    const initialSearch = this.search();
     Promise.all([
-      this.fetchCities(),
-      this.search(),
+      this.fetchCities().then(() => this.detectMyCity(true)).then(async changed => { await initialSearch; if (changed && this.geoAlive) return this.search(); }),
+      initialSearch,
       this.syncTelegram()
     ]);
   }
@@ -278,11 +282,17 @@ export default {
 
       <!-- Search form -->
       <div class="bg-white/95 backdrop-blur-md rounded-3xl p-5 shadow-lg shadow-black/5 space-y-4 relative z-10 ring-1 ring-black/5">
+<div class="mb-3 text-sm">
+          <button type="button" :disabled="geoLoading" @click="detectMyCity(false)" class="text-blue-700 font-semibold py-2 disabled:opacity-50">📍 {{ geoLoading ? 'Определяем город…' : 'Определить мой город' }}</button>
+          <p v-if="geoMessage" role="status" aria-live="polite" class="text-slate-600">{{ geoMessage }}</p>
+          <p class="text-xs text-slate-500">Геолокация используется только для выбора города. <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer" class="underline">Данные GeoNames</a></p>
+        </div>
+
         <!-- From -->
         <div class="relative group">
           <div class="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-[3px] pointer-events-none z-10 transition-colors"
             :class="activeTab === 'rides' ? 'border-yellow-500 group-focus-within:bg-yellow-500' : 'border-blue-500 group-focus-within:bg-blue-500'"></div>
-          <select v-model="fromCity" class="w-full pl-10 pr-4 py-3 bg-gray-50 rounded-xl outline-none text-gray-800 font-medium appearance-none focus:bg-white transition-all border border-transparent cursor-pointer"
+          <select v-model="fromCity" @change="markOriginChanged" class="w-full pl-10 pr-4 py-3 bg-gray-50 rounded-xl outline-none text-gray-800 font-medium appearance-none focus:bg-white transition-all border border-transparent cursor-pointer"
             :class="activeTab === 'rides' ? 'focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-200' : 'focus:ring-2 focus:ring-blue-500/50 focus:border-blue-200'">
             <option value="" disabled selected>Откуда</option>
             <option v-for="city in availableCities" :key="'from-'+city" :value="city">{{ city }}</option>

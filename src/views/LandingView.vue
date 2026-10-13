@@ -1,10 +1,12 @@
 <script>
 import api from '../api';
+import geolocationMixin from '../mixins/geolocationMixin';
 import { getTelegramUser, getTelegramInitData } from '../telegram';
 import AppLogo from '../components/AppLogo.vue';
 import acquisitionService from '../services/acquisitionService';
 
 export default {
+  mixins: [geolocationMixin],
     name: 'LandingView',
     components: {
         AppLogo
@@ -90,12 +92,13 @@ export default {
   },
   mounted() {
     acquisitionService.initSession();
-    this.fetchCities();
+    this.fetchCities().then(() => this.detectMyCity(true));
     this.fetchRecentRides();
     this.syncTelegram();
   },
   watch: {
     activeTab() {
+      this.markOriginChanged();
       this.fetchCities();
       // Reset selected cities if needed, or keep them if they exist in both lists
       // this.fromCity = '';
@@ -183,6 +186,12 @@ export default {
                             </button>
                         </div>
 
+<div class="mb-3 text-sm">
+          <button type="button" :disabled="geoLoading" @click="detectMyCity(false)" class="text-blue-700 font-semibold py-2 disabled:opacity-50">📍 {{ geoLoading ? 'Определяем город…' : 'Определить мой город' }}</button>
+          <p v-if="geoMessage" role="status" aria-live="polite" class="text-slate-600">{{ geoMessage }}</p>
+          <p class="text-xs text-slate-500">Геолокация используется только для выбора города. <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer" class="underline">Данные GeoNames</a></p>
+        </div>
+
                         <!-- Search Fields Stack/Grid -->
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-2 md:gap-3 p-1">
                             
@@ -191,7 +200,7 @@ export default {
                                 <div class="absolute left-4 top-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none">
                                     <div class="w-3 h-3 rounded-full border-[3px]" :class="activeTab === 'rides' ? 'border-amber-400' : 'border-blue-400'"></div>
                                 </div>
-                                <select v-model="fromCity" class="w-full h-[60px] pl-11 pr-4 bg-slate-50 rounded-[20px] outline-none text-slate-800 font-bold appearance-none transition-all focus:bg-white cursor-pointer hover:bg-slate-100">
+                                <select v-model="fromCity" @change="markOriginChanged" class="w-full h-[60px] pl-11 pr-4 bg-slate-50 rounded-[20px] outline-none text-slate-800 font-bold appearance-none transition-all focus:bg-white cursor-pointer hover:bg-slate-100">
                                     <option value="" disabled selected class="font-normal">Откуда?</option>
                                     <option v-for="city in availableCities" :key="'from-'+city" :value="city">{{ city }}</option>
                                 </select>
