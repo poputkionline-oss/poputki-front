@@ -28,6 +28,11 @@ test('Dushanbe and international city matching', () => {
   assert.equal(resolveGeoCity(41.26465, 69.21627, ['Ташкент']), 'Ташкент');
   assert.equal(resolveGeoCity(61.25, 73.41667, ['Сургут']), 'Сургут');
 });
+test('Live service names retain country suffixes and enforce their countries', () => {
+  assert.equal(resolveGeoCity(40.28256, 69.62216, ['Худжанд (TJ)', 'Душанбе (TJ)']), 'Худжанд (TJ)');
+  assert.equal(resolveGeoCity(61.25, 73.41667, ['Сургут (РФ)']), 'Сургут (РФ)');
+  assert.equal(resolveGeoCity(40.28256, 69.62216, ['Худжанд (UZ)']), null);
+});
 test('No wrong distant departure or unsupported city', () => {
   assert.equal(resolveGeoCity(40.28256, 69.62216, ['Душанбе']), null);
   assert.equal(resolveGeoCity(0, 0, ['Худжанд']), null);
